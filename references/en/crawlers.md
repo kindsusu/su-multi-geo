@@ -16,6 +16,7 @@ No policy = leaving it to chance.
 | **OpenAI** | `GPTBot` | `OAI-SearchBot` | `ChatGPT-User` |
 | **Anthropic** | `ClaudeBot` | `Claude-SearchBot` | `Claude-User` |
 | **Perplexity** | (none) | `PerplexityBot` | `Perplexity-User` |
+| **Naver** | (none) | `Yeti` | (none) |
 | **Google** | `Google-Extended` ⚠️ | (Googlebot) | (Googlebot) |
 | Others | `CCBot`, `Applebot-Extended`, `Bytespider`, `Meta-ExternalAgent` | | |
 
@@ -71,6 +72,10 @@ Allow: /
 User-agent: Google-Extended
 Allow: /
 
+# Naver (essential for the Korean market — NEO lane)
+User-agent: Yeti
+Allow: /
+
 Sitemap: https://example.com/sitemap.xml
 ```
 
@@ -89,8 +94,9 @@ curl -sL https://example.com/robots.txt
 
 - Whether each UA actually arrives is visible in **access logs** — except Google-Extended,
   which never does
-- robots.txt is **advisory**. Compliance depends on vendor policy; the major vendors
-  (OpenAI, Anthropic, Google, Apple, Perplexity) have publicly stated they honor it
+- robots.txt is **advisory**. Major vendors have stated they honor it, but there have
+  been documented compliance controversies (Perplexity, 2024) — don't trust the statement,
+  **verify compliance in your access logs**
 - For real blocking, enforce at the **server/WAF layer** by user-agent, not in robots.txt
 
 ## Maintenance

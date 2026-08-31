@@ -15,6 +15,14 @@ If you do not record the "before," you can never prove the effect.
 | Indexed pages | GSC + `site:domain` (Google and Bing separately) | weekly |
 | **AI citation O/X** | protocol in §2 | biweekly |
 | **AI crawler visits** | server access log | weekly |
+| **AI referral traffic** | GA4 Traffic acquisition → session source filter | weekly |
+
+Filter sessions whose source is `chatgpt.com`, `perplexity.ai`, `gemini.google.com`,
+`claude.ai`, `copilot.microsoft.com`. Unlike the manual citation O/X check, this is the
+**only lagging citation indicator that collects itself** — and the only automatic evidence
+that a citation turned into an actual visit.
+⚠️ It **undercounts structurally.** Clients that do not pass a referrer (in-app browsers,
+some redirect hops) land in Direct, so read the **trend**, never the absolute number.
 
 ```bash
 # AI crawler visits — the leading indicator that moves before citations do
@@ -78,6 +86,10 @@ When building a measurement pipeline, watch the **date of the value**, not the v
   weekends. That pattern is evidence of real demand
 - **The query list is the roadmap.** Top queries in GSC and Search Advisor are the questions
   people actually type. A top query with no dedicated landing page = the next page to build
+- **AI referrals are a lagging indicator.** The order is crawler visits (leading) → citation
+  O/X (present) → referral traffic (lagging). Zero referrals alongside a confirmed citation is
+  normal — you were cited but not clicked, or the referrer was stripped. Referrals rising is
+  evidence citations are rising
 - **Beware growth rates.** When the baseline is near zero, any change produces a percentage in
   the tens of thousands. **Always report absolute values alongside.**
 

@@ -17,6 +17,7 @@ AI 크롤러는 **용도가 세 종류**고, robots.txt 정책은 용도별로 �
 | **Anthropic** | `ClaudeBot` | `Claude-SearchBot` | `Claude-User` |
 | **Perplexity** | — | `PerplexityBot` | `Perplexity-User` |
 | **Google** | `Google-Extended` ⚠️ | (Googlebot) | (Googlebot) |
+| **네이버** | — | `Yeti` | — |
 | 기타 | `CCBot`, `Applebot-Extended`, `Bytespider`, `Meta-ExternalAgent` | | |
 
 ## ⚠️ Google-Extended는 크롤러가 아니다 — 구조가 다르다
@@ -70,6 +71,10 @@ Allow: /
 User-agent: Google-Extended
 Allow: /
 
+# ── 네이버 (한국 시장이면 필수 — NEO 레인) ──
+User-agent: Yeti
+Allow: /
+
 Sitemap: https://example.com/sitemap.xml
 ```
 
@@ -86,8 +91,8 @@ curl -sL https://example.com/robots.txt          # 실제 배포본 확인
 ```
 
 - 각 UA가 실제로 오는지는 **접근 로그**로 본다 (Google-Extended 제외 — 안 온다)
-- robots.txt는 **권고**다. 준수는 벤더 정책에 달렸다 — 주요 벤더(OpenAI·Anthropic·Google·
-  Apple·Perplexity)는 준수를 공식 표명했다
+- robots.txt는 **권고**다. 주요 벤더는 준수를 표명했지만 미준수 논란(Perplexity, 2024)도
+  있었다 — 표명을 믿지 말고 **접근 로그로 준수 여부를 검증**하라
 - 진짜 차단이 필요하면 robots.txt가 아니라 **서버·WAF 레벨**에서 UA를 막아야 한다
 
 ## 유지보수

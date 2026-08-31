@@ -39,9 +39,15 @@ Check the **meta tag and the HTTP header — both**.
 
 ## 4. Meta
 
-- [ ] Title 50–60 chars: core keyword front, brand back
-- [ ] Description 150–160 chars: a sentence giving a reason to click
+- [ ] Title 50–60 chars — **halve it for CJK content (25–30 chars)**: core keyword front,
+      brand back
+- [ ] Description 150–160 chars — **70–80 for CJK**: a sentence giving a reason to click
       (do not put disclaimers here — it only kills CTR)
+- ℹ️ The real limit is **rendered width in the result snippet**, not character count. A CJK
+      character is roughly twice as wide as a Latin one, so Latin limits get truncated.
+      For mixed strings, budget against the shorter limit
+- [ ] ⚠️ Measure **characters, not bytes**. In bash, `${#var}` counts UTF-8 bytes, so one CJK
+      character reads as 3 — use `printf '%s' "$t" | wc -m`
 - [ ] Must be unique per page — hundreds of pages sharing a templated description reads as duplicate
 - [ ] OG image: the face people see when sharing. Per-type dynamic generation is ideal
 

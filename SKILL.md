@@ -41,18 +41,21 @@ description: SEO·AEO·GEO(ChatGPT·Gemini·Claude·Perplexity)·LLMO·NEO(네�
 | LLMO | ❌ | 엔티티 표기 3종 혼재 |
 | NEO(네이버) | ❌ | 서치어드바이저 미등록 |
 
-## Phase 1 — SEO 기반
-`references/seo.md`. 순서: 콘텐츠 SSR 공개 → 사이트맵(대형이면 샤딩) → 메타(제목 50-60·
-설명 150-160) → JSON-LD → canonical → 함정 점검(CSR 바일아웃, 404 캐시).
+## Phase 1 — 크롤러 정책 (0순위)
+`references/crawlers.md`를 읽고 robots.txt를 확정한다. **진단 직후 가장 먼저 한다** —
+크롤링이 막혀 있으면 아래 작업 전부가 도달하지 않는다. 벤더별 UA와 Google-Extended
+예외를 확인하고, `curl`로 배포된 robots.txt를 다시 읽어 확정한다.
 
-## Phase 2 — 의도 랜딩
-"사람들이 검색창에 치는 질문"을 목록화하고 **질문 하나 = 페이지 하나**로 설계한다.
+## Phase 2 — SEO 기반
+`references/seo.md`. 순서: 콘텐츠 SSR 공개 → 사이트맵(대형이면 샤딩) → 메타(제목 영문
+50-60·한글 25-30 / 설명 영문 150-160·한글 70-80) → JSON-LD → canonical → 함정 점검
+(CSR 바일아웃, 404 캐시).
+
+## Phase 3 — 의도 랜딩
+`references/intent.md`. "사람들이 검색창에 치는 질문"을 GSC·서치어드바이저·자동완성·
+CS 문의에서 발굴해 목록화하고 **질문 하나 = 페이지 하나**로 설계한다.
 각 페이지: URL·h1이 질문을 그대로 반영 / 첫 문단에서 40자 내외 직답 / 아래에 근거 데이터
-(표·수치·기준일).
-
-## Phase 3 — 크롤러 정책
-`references/crawlers.md`를 읽고 robots.txt를 확정한다. **이걸 Phase 4보다 먼저 한다** —
-크롤링이 막혀 있으면 아래 작업 전부가 도달하지 않는다.
+(표·수치·기준일). 답이 같은 질문을 여러 페이지로 쪼개지 마라 (카니발라이제이션).
 
 ## Phase 4 — AEO + GEO + LLMO
 `references/aeo.md` → `references/geo.md` → `references/llmo.md`.
@@ -66,10 +69,24 @@ description: SEO·AEO·GEO(ChatGPT·Gemini·Claude·Perplexity)·LLMO·NEO(네�
 `references/measure.md`. 기준선 기록 → 14일 후 재측정 일정 확정 → 지표 추적 세팅.
 **"고쳤다"로 끝나는 보고는 실패다.** "언제 무엇을 다시 재는지"까지가 완료 조건이다.
 
+## 소스 접근 불가 모드
+
+사이트 코드·서버에 접근할 수 없으면(외주 제작, CMS 권한 없음 등) **구현 대신 산출물
+모드로 전환한다.** 접근을 기다리며 진단만 반복하지 마라.
+
+- 완성 파일을 만들어 전달한다: `robots.txt`, `llms.txt`, `sitemap.xml`, 페이지 유형별 JSON-LD
+- **배포 지시서**를 함께 낸다 — 파일마다 올릴 경로, 적용 방법(정적 업로드 / 템플릿 삽입
+  위치), 기존 파일이 있으면 교체인지 병합인지, 주의사항
+- 메타·본문처럼 파일로 넘길 수 없는 것은 **페이지별 before/after 표**로 적어 전달한다
+- 배포 후 crawler-eye 검증(`curl`)은 **동일하게 수행한다.** 지시서대로 올라갔는지 확인하기
+  전까지 완료가 아니다 — 반영 여부를 상대방 말로 대체하지 마라
+
 ## 보고 형식
 
-① 바꾼 것 (before/after) ② 크롤러 눈 검증 (curl 증빙) ③ 다음 측정 일정
-④ 하지 않은 것과 이유 (예: 백링크 요청 거절)
+① 바꾼 것 (before/after). 직접 배포하지 않았으면 **"산출물 전달"**로 명시한다 —
+전달 파일 목록 + 배포 지시서 + **아직 미반영이라는 사실**까지 적는다
+② 크롤러 눈 검증 (curl 증빙). 미배포면 "배포 후 재검증 예정"으로 남긴다
+③ 다음 측정 일정 ④ 하지 않은 것과 이유 (예: 백링크 요청 거절)
 
 ---
 *원안: [leopard627/fire-your-seo-agency](https://github.com/leopard627/fire-your-seo-agency) (MIT).

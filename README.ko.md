@@ -94,6 +94,7 @@ SKILL.md                 운영 절차 — Phase 0 ~ 6
 references/
 ├── crawlers.md          4개 벤더 9개 UA + Google-Extended 예외
 ├── seo.md               기술 기반 — SSR·사이트맵·JSON-LD·응답 위생
+├── intent.md            질문 발굴·선별·페이지 매핑·카니발라이제이션 회피
 ├── aeo.md               답변 추출·FAQ·E-E-A-T·Bing 등록
 ├── geo.md               엔진별 레인 매트릭스와 결정 지점
 ├── llmo.md              엔티티 일관성·학습 표면·분기 검증

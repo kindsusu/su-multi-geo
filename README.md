@@ -94,6 +94,7 @@ SKILL.md                 Operating procedure — Phase 0 through 6
 references/
 ├── crawlers.md          9 user-agents across 4 vendors + the Google-Extended exception
 ├── seo.md               Technical foundation — SSR, sitemap, JSON-LD, response hygiene
+├── intent.md            Finding, filtering and mapping the questions worth a page
 ├── aeo.md               Answer extraction, FAQ blocks, E-E-A-T, Bing registration
 ├── geo.md               Per-engine lane matrix and what decides each one
 ├── llmo.md              Entity consistency, training surfaces, quarterly verification
