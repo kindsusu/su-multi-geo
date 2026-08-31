@@ -83,19 +83,44 @@ your number.
 - Watch for the weekend-dip pattern: weekday-shaped topics going quiet on weekends is normal,
   and is evidence of real demand
 
-## 7. Secondary domestic engines — Daum / Kakao
+## 7. Daum / Kakao — where the older demographic passes through
 
-If you are doing the Korean market anyway, take these on the way. The demand does not yet
-justify its own lane — **a few lines on top of work you already do covers it.**
+The common observation is that Daum's search audience skews older. **If your target
+customers include that demographic, this section is not "secondary" — it is a real-demand
+channel.** Raise its priority accordingly. (Promote it to its own lane if demand keeps
+growing.)
+
+### Foundation — rides on work you already do
 
 - [ ] **Register with Daum Search** — Daum has no webmaster console, just a simple
       submission form. Register the primary domain with a Kakao account (10 minutes, free)
 - [ ] When writing an explicit robots.txt, add one line allowing Daum's crawler, **Daumoa**
-- [ ] **Tistory is owned by Kakao** — pick Tistory as your open-web channel and you get
-      global-engine reach **and Daum search exposure at once** (the double effect in
-      `geo.md`'s channel map)
-- [ ] With local/offline touchpoints, keep **Kakao Map business info** matching the website
-      (same logic as the place listings in §4)
-- [ ] Add one or two Daum queries to the measurement set; observe quarterly
-- ℹ️ Which index Kakao's AI answers from is not publicly settled — treat it as an
-      observation target, not a fact. **Promote it to a lane when demand grows**
+- [ ] No extra technical work: `seo.md`'s SSR, sitemap, and structured data apply to
+      Daum as-is
+
+### Kakao-ecosystem content — Daum's preferred blocks
+
+Daum's unified search tends to surface its own ecosystem (**Tistory, Brunch, cafes**) as
+blocks. The same inside/outside two-track logic as Naver applies:
+
+- [ ] **Tistory** — pick it as your open-web channel and you get global-engine reach
+      **and Daum exposure at once** (the double effect in `geo.md`'s channel map).
+      If Daum matters to you, Tistory becomes the first-choice open-web channel
+- [ ] The original always lives on your own domain; Kakao-ecosystem posts carry a
+      summary + link (same rule as §3)
+
+### KakaoTalk touchpoints — reach outside of search
+
+Older users often meet a brand **inside KakaoTalk** rather than through search:
+
+- [ ] **KakaoTalk Channel** — set up and maintain it; the description is the official
+      wording fixed in Phase 2, **verbatim**; hours and contacts match the website
+- [ ] **Kakao Map business info** — address, phone, and hours must match the website
+      (same logic as the place listings in §4). Kakao Map **reviews and ratings are also
+      a reputation surface** → `reputation.md`
+
+### Measurement
+
+- [ ] Add **Daum unified-search queries** to the measurement set, split brand/non-brand
+- ℹ️ Which index Kakao's AI answers from is not publicly settled — keep it a quarterly
+      observation target, not a fact
