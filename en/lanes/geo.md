@@ -63,6 +63,27 @@ stacked only on owned surfaces is half a claim. Reinforcement is not manufacture
 **giving people the same experience so they say the same thing.**
 → Where to start on third-party surfaces: `reputation.md`.
 
+### Channel map — what goes where
+
+The moment you pick a channel you have also picked which engines you can reach. And each
+channel wants **different content** — pasting the same post everywhere is duplication,
+not distribution.
+
+| Channel | Mainly reaches | What to publish | Format & cautions |
+|---|---|---|---|
+| **Own domain** | every engine | The ledger of facts — **originals** of pricing, terms, data; intent landings; FAQ | Phase 3–4 output. Paragraph-level citation structure (subject + number + as-of date). Every other channel links here |
+| **Closed-platform blogs** (Naver etc.) | that platform + some engines | **Summaries + link to the original**, reviews, news-style posts | Put the original here and it does not exist for global engines (`naver.md` §3) |
+| **Open-web blogs** (Tistory etc.) | ChatGPT & Gemini lines | Open-web editions of guides and comparisons, build logs | **Same numbers, same as-of dates** as the owned original — a mismatch backfires |
+| **Job-board & business profiles** | every engine (board-like markup reads well) | The **official description fixed in Phase 2, verbatim** + a fresh updated-at | Neglect is the worst case — a stale profile keeps describing you (`reputation.md` §4) |
+| **YouTube** | citations observed most in the Google line (AI Overviews · Gemini) | Explainer/comparison videos + **key numbers and the source link in the description** | Speech indexes poorly — put facts in text (title, description, captions) |
+| **Communities & reviews** | absorb evaluation-stage questions | Not a place you post — a place you **earn the same words by giving the same experience** | Disguised posting and reciprocal schemes, once detected, sink the whole channel's trust |
+| **Press** | varies by engine; trade press can outrank national dailies in B2B | Announcements with evidence (numbers + as-of dates), interviews | Put the official message in releases **verbatim** — headlines and sentences recur in AI answers |
+| **Wikis** | high citation weight | Not yours to edit | **Monitor** facts and freshness only (`reputation.md` §3) |
+
+The order never changes: **ledger (owned) first, distribution (channels) second.** Without an
+original there is nothing to link to, and the moment two channels disagree on a number you
+lose them both.
+
 ## 4. Per-engine — ChatGPT
 
 - [ ] **Register with Bing Webmaster Tools** (one-click import from GSC, ~10 minutes).
