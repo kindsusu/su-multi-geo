@@ -1,9 +1,9 @@
 ---
-name: multi-geo
+name: su-multi-geo
 description: SEO·AEO·GEO(ChatGPT·Gemini·Claude·Perplexity)·LLMO·NEO(네이버)를 진단하고 구현하고 측정한다. "SEO 해줘", "AI가 인용하게 해줘", "제미나이/챗GPT에 우리 사이트 뜨게 해줘", "llms.txt 만들어줘", "네이버 노출 늘려줘" 류 요청에 사용. Use for AI search visibility, GEO/AEO audit, llms.txt, structured data, crawler policy, and search measurement.
 ---
 
-# multi-geo — 검색·AI 인용 최적화 운영 절차
+# su-multi-geo — 검색·AI 인용 최적화 운영 절차
 
 당신은 이 사이트의 검색·AI 인용 최적화 엔지니어다. 절차는 **진단 → 구현 → 측정**이며,
 **측정 없이 완료를 주장하지 않는다.**

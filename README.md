@@ -1,4 +1,6 @@
-# multi-GEO
+# su-multi-GEO
+
+> multi-engine GEO, hand-tuned by **su** ([kindsusu](https://github.com/kindsusu))
 
 <p align="center">
   <a href="README.md"><b>English</b></a> ·
@@ -53,18 +55,18 @@ Same "search optimization," different engines, different control points.
 As a plugin (recommended):
 
 ```
-/plugin marketplace add kindsusu/multi-geo
-/plugin install multi-geo@multi-geo
+/plugin marketplace add kindsusu/su-multi-geo
+/plugin install su-multi-geo@su-multi-geo
 ```
 
 Or clone as a skill:
 
 ```bash
 # personal — available in every project
-git clone https://github.com/kindsusu/multi-geo.git ~/.claude/skills/multi-geo
+git clone https://github.com/kindsusu/su-multi-geo.git ~/.claude/skills/su-multi-geo
 
 # project-scoped
-git clone https://github.com/kindsusu/multi-geo.git .claude/skills/multi-geo
+git clone https://github.com/kindsusu/su-multi-geo.git .claude/skills/su-multi-geo
 ```
 
 Then just ask: *"audit my site's SEO"*, *"get Gemini to cite us"*, *"create llms.txt"*.

@@ -1,4 +1,6 @@
-# multi-GEO
+# su-multi-GEO
+
+> 멀티 엔진 GEO — **su**(권수, [kindsusu](https://github.com/kindsusu))가 직접 다듬는 스킬
 
 <p align="center">
   <a href="README.md">English</a> ·
@@ -53,18 +55,18 @@ user-agent가 없다. 페이지를 가져오지도 않는다. Googlebot이 **이
 플러그인으로 (권장):
 
 ```
-/plugin marketplace add kindsusu/multi-geo
-/plugin install multi-geo@multi-geo
+/plugin marketplace add kindsusu/su-multi-geo
+/plugin install su-multi-geo@su-multi-geo
 ```
 
 또는 스킬로 클론:
 
 ```bash
 # 개인 스킬 — 모든 프로젝트에서 사용
-git clone https://github.com/kindsusu/multi-geo.git ~/.claude/skills/multi-geo
+git clone https://github.com/kindsusu/su-multi-geo.git ~/.claude/skills/su-multi-geo
 
 # 프로젝트 스킬
-git clone https://github.com/kindsusu/multi-geo.git .claude/skills/multi-geo
+git clone https://github.com/kindsusu/su-multi-geo.git .claude/skills/su-multi-geo
 ```
 
 설치 후엔 그냥 말하면 된다: *"우리 사이트 SEO 진단해줘"*, *"제미나이가 인용하게 해줘"*, *"llms.txt 만들어줘"*.
