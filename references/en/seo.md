@@ -1,4 +1,4 @@
-# SEO — Technical Foundation Checklist
+# SEO — Technical Groundwork, Item by Item
 
 Content a crawler cannot read is content that does not exist. One goal:
 **everything — body, meta, structured data — present in the HTML received without JavaScript.**
@@ -6,7 +6,7 @@ Content a crawler cannot read is content that does not exist. One goal:
 This lane is the precondition for **every** engine. Gemini in particular has Googlebot's index
 as its only gateway, so an empty result here means Gemini GEO never starts.
 
-## 1. Content exposure
+## 1. What the crawler actually sees
 
 - [ ] Do key pages open **without login?** Content behind an auth wall is not indexed.
       If you cannot open everything, at least SSR a teaser (first paragraph, key figures)
@@ -66,7 +66,8 @@ Check the **meta tag and the HTTP header — both**.
 
 - [ ] canonical: parameter variants and duplicate paths point at one canonical
 - [ ] For multilingual sites, hreflang must be reciprocal (one-sided is void)
-- [ ] Missing pages return 404, not 200 — soft 404s burn crawl budget
+- [ ] A page that does not exist must answer 404, never 200 — soft 404s eat crawl budget
+      for nothing
 - [ ] ⚠️ **The 404 bake trap**: in ISR/CDN cache layers, a 404 from a transient failure can be
       baked for hours. On a data-fetch failure, throw (retry) instead of returning 404 —
       "not found" and "could not fetch" are different things
@@ -77,7 +78,7 @@ Check the **meta tag and the HTTP header — both**.
 - [ ] Images in WebP/AVIF with explicit width/height (CLS)
 - [ ] Preload the LCP target (hero image, fonts)
 - [ ] Losslessly optimize logos and icons — a several-hundred-KB logo shipped on every page
-      is a common waste
+      is weight you pay for on every single request
 
 ## 8. Indexing acceleration
 

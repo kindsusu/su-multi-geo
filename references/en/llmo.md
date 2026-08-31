@@ -1,4 +1,4 @@
-# LLMO — Model Awareness Optimization
+# LLMO — Getting the Model to Remember You
 
 Where GEO addresses **AI that browses**, LLMO plants your brand in **the model's own knowledge.**
 The question is whether the model knows you when a user asks "recommend a service like X"
@@ -7,7 +7,7 @@ without searching at all.
 Effects accumulate slowly, on **training cycles**. In exchange, once embedded it becomes a moat
 an agency cannot imitate. **Measure it quarterly** — do not put it in the 14-day loop.
 
-## 1. Entity consistency
+## 1. Lock the name to one spelling
 
 - [ ] Write the service name **identically everywhere** — including localized spellings and
       spacing. Divergent naming splits the entity inside the model
@@ -18,7 +18,7 @@ an agency cannot imitate. **Measure it quarterly** — do not put it in the 14-d
 - [ ] Check for name collisions: if a different service with the same name surfaces in search,
       the model will conflate them too
 
-## 2. Surfaces that survive into the training corpus
+## 2. Where a description survives into training data
 
 Models concentrate on **surfaces with high crawl value**, not the whole web. Leave accurate
 descriptions there.
@@ -32,7 +32,7 @@ descriptions there.
 - [ ] **The training crawlers must be open** — blocking `GPTBot`, `ClaudeBot`, and
       `Google-Extended` closes this entire lane (`crawlers.md`)
 
-## 3. Stability
+## 3. Keeping it from drifting
 
 - [ ] **Preserve permalinks**: changing a URL turns the address the model remembers into a 404.
       If you must change it, keep the 301 **permanently**

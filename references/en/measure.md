@@ -1,9 +1,9 @@
-# Measurement Loop — fixing it is not finishing it
+# Measurement Loop — the fix is half, the check is the other half
 
 This is where a playbook differs from an agency report. **Optimization without measurement
 is just a claim.**
 
-## 1. Baseline — capture it before you change anything
+## 1. Baseline — record it before you touch anything
 
 If you do not record the "before," you can never prove the effect.
 
@@ -72,11 +72,11 @@ Record like this:
 
 ## 4. The stale-data trap
 
-> **Stale data passes every lower bound.**
+> **A lower bound cannot detect staleness.**
 
 A monitor that only checks "not zero" will happily pass a value that has been frozen for days.
-When building a measurement pipeline, watch the **date of the value**, not the value.
-"If the last update is older than N days, do not display this metric" is the safe default.
+So what the pipeline must watch is not the value but **the timestamp on it**.
+"If the last update is older than N days, do not display this metric at all" is the safe default.
 
 ## 5. How to read the numbers
 

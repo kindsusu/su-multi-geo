@@ -1,10 +1,10 @@
-# NEO — Naver Engine Optimization
+# NEO — Naver Search and AI Briefing
 
 For a service targeting the Korean market, a large share of search traffic comes from Naver.
 Global SEO and GEO guides do not cover it at all. Two goals: ① Naver search visibility
 ② **AI Briefing citation** (Naver's AI summary at the top of results naming your page as a source).
 
-## 1. Search Advisor (the required foundation)
+## 1. Search Advisor — lay this down first
 
 - [ ] Register the site at searchadvisor.naver.com and verify ownership
       (requires the operator's account — guide the steps, do not attempt it yourself)
@@ -14,7 +14,7 @@ Global SEO and GEO guides do not cover it at all. Two goals: ① Naver search vi
 - [ ] Request collection: for important new pages, a manual collection request right after
       registration accelerates pickup
 
-## 2. AI Briefing citation requirements
+## 2. Winning an AI Briefing citation
 
 Naver AI Briefing attaches source chips **at the paragraph level.** Conditions for a cited page:
 
@@ -23,8 +23,8 @@ Naver AI Briefing attaches source chips **at the paragraph level.** Conditions f
 - [ ] **Primary-source signals**: the page states it is based on an official source, with the
       original link alongside
 - [ ] **Freshness**: whichever page stands up fastest after an event takes the citation
-- [ ] **Mobile optimization**: Naver is mobile-first. The essentials must be visible in the
-      first mobile screen
+- [ ] **Mobile optimization**: Naver is mobile-first. The essentials must be visible on the
+      first phone screen, before any scrolling
 - [ ] Verification: search the target keyword **in the Naver app** and record the actual source chips
 
 ## 3. Two-track blogging (inside / outside)

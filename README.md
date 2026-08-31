@@ -121,5 +121,3 @@ References are the Korean canon (`references/*.md`); `references/en/*.md` is the
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
-Derived from [leopard627/fire-your-seo-agency](https://github.com/leopard627/fire-your-seo-agency) (MIT), reworked with per-engine GEO lanes, a corrected AI-crawler policy, an engine-specific measurement protocol, and a Phase 0 audit script.

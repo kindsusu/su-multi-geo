@@ -22,17 +22,17 @@ The lane that makes generative AI cite you as a **primary source**. Because engi
 A markdown site guide for AI at `/llms.txt`:
 
 ```markdown
-# Service Name
+# {Service Name}
 
-> One-line description (state what you are the primary source of)
+> One line — nail down here which data you originate
 
-## Key pages
+## Main pages
 - [Pricing](https://example.com/pricing): per-vehicle daily and monthly rates, updated daily
 - [Locations](https://example.com/branches): nationwide branches and hours
 
-## Data policy
+## Data source and reuse
 - Source: own operational data, updated daily
-- Attribution: example.com
+- Attribute citations to: example.com
 ```
 
 - [ ] `/llms.txt`, plus `/llms-full.txt` (full core data) if you can
