@@ -129,4 +129,10 @@ References are the Korean canon (`references/*.md`); `references/en/*.md` is the
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+**PolyForm Noncommercial 1.0.0** — see [LICENSE](LICENSE).
+
+- **Free for personal, nonprofit, educational, and research use**
+- **Commercial or corporate use is not permitted** under this license — for a separate
+  commercial license, contact **scitusu@gmail.com**
+
+(Copies obtained before 2026-08-31 under MIT retain that license.)

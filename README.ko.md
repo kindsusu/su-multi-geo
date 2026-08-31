@@ -129,4 +129,9 @@ scripts/audit.sh         Phase 0 크롤러 눈 진단
 
 ## 라이선스
 
-MIT — [LICENSE](LICENSE) 참조.
+**PolyForm Noncommercial 1.0.0** — [LICENSE](LICENSE) 참조.
+
+- **개인·비영리·교육·연구 목적은 무료**로 자유롭게 쓸 수 있다
+- **기업·상업 목적 사용은 허용되지 않는다** — 별도 라이선스가 필요하면 **scitusu@gmail.com**으로 문의
+
+(2026-08-31 이전 MIT 시절에 받은 사본에는 당시 라이선스가 적용된다)
