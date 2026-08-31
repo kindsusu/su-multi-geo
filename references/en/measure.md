@@ -39,7 +39,8 @@ No log access? Substitute your host's bot-traffic classification (Cloudflare, Ve
 ## 2. AI citation protocol — the method differs per engine
 
 Fix **5–10 target questions** and measure with the same ones every time.
-If the questions change, the trend is meaningless.
+If the questions change, the trend is meaningless. 5–10 is the starting point — once this runs
+as real operations, grow the set to **40–50 questions**, brand and non-brand combined.
 
 | Engine | Log-observable | Method |
 |---|---|---|
@@ -56,11 +57,52 @@ If the questions change, the trend is meaningless.
 > Use the **GSC indexed-page count** as Gemini's leading indicator instead — Googlebot's index
 > is the only gateway to Gemini. More indexed pages means more reachable surface.
 
-Record like this:
+### Engine priority — where to start when you cannot measure them all
+
+**Start with ChatGPT and Google AI Overviews.** Google is the surface exposed by default, with
+no login and no subscription, so it carries the largest share of real usage — and showing up
+there carries into AI Mode and Gemini. Claude and Copilot hold a relatively smaller usage share:
+**add them later**. Measuring two engines **under the same conditions, continuously** beats
+adding more engines.
+
+### Measurement conditions — break any of these three and the numbers are contaminated
+
+- [ ] **Query logged out, in a private window.** Signed in, you get a personalized answer shaped
+      by chat history and account settings. What you want to measure is not "the answer shown
+      to that person" but "the answer shown to anyone"
+- [ ] **Repeat the same question 5–10 times on the same day** (10 if you can) and look at the
+      sources that appear consistently. Generated answers vary every run — ⚠️ **a single query
+      is not a sample.** Record **N out of 10**, not "yes/no".
+      ⚠️ The repeats must be **run on one day** to read a distribution. Spread across days, what
+      you see is not the distribution but index and source changes mixed into it
+- [ ] **Keep the cited URLs.** O/X alone does not tell you what to do next. Frequency (how
+      often) plus URL (which page) is what separates "strengthen that page" from
+      "no page exists for that question"
+
+### Brand and non-brand queries are different metrics
+
+Fix **two separate sets** and track them separately. Averaged together, neither is visible.
+
+| Set | Example | How to read it |
+|---|---|---|
+| **Brand queries** | "○○ rental rates", "what kind of company is ○○" | Usually cited. Not cited = an incident signal (indexing, crawler, entity fragmentation) |
+| **Non-brand queries** | "long-term lease rate comparison", "corporate vehicle lease terms" | **Where it is actually won.** Cited here means you reached demand that never knew you |
+
+Brand-only gains are not improvement — they mean **you are visible only to people who already
+knew you**.
+
+Record like this — **frequency and URL on the same line**:
 
 ```
-2026-09-15 | Q1 "long-term car rental Jeju" | ChatGPT ✗ / Gemini ✗ / Claude ✓ / Naver ✗
+2026-09-15 | non-brand Q3 "long-term lease rate comparison" | logged out, 10 runs same day
+  ChatGPT   3/10  https://example.com/long-term-rate
+  Gemini    0/10  —
+  Claude    7/10  https://example.com/long-term-rate (5) / /faq-rate (2)
+  Naver AI  0/10  —
 ```
+
+An empty URL column means there is no page to cite; the same URL repeating means that page is
+a citation asset. The next task is decided by reading that column.
 
 ## 3. The re-measure date is part of the work
 
@@ -96,9 +138,56 @@ So what the pipeline must watch is not the value but **the timestamp on it**.
 ## 6. Report format
 
 ```
-[Baseline] 8/1–8/28  impressions 12,400 · clicks 180 · indexed 340 · AI cited 0/8
+[Baseline] 8/1–8/28  impressions 12,400 · clicks 180 · indexed 340
+                     AI cited: brand 2/4 · non-brand 0/6 (10 runs each, logged out)
 [Change]   8/29      6 intent landings + llms.txt + robots for all vendors + FAQ LD
 [Scheduled] 9/12
-[Result]   9/12      impressions 31,000 (+18,600) · clicks 610 · indexed 890 · AI cited 3/8
-                     └ ChatGPT 2/8, Claude 1/8, Gemini 0/8 (indexed 890 → Gemini pending)
+[Result]   9/12      impressions 31,000 (+18,600) · clicks 610 · indexed 890
+                     AI cited: brand 4/4 · non-brand 3/6
+                     └ ChatGPT 2, Claude 1, Gemini 0 (indexed 890 → Gemini pending)
 ```
+
+## 7. When the citation is wrong — the correction procedure
+
+The AI cited you, but got it wrong. **Do not treat every dissatisfaction as an error.**
+Time spent on wording differences is time the real factual errors stay live.
+
+### Three error classes — sort these first
+
+| Class | What | Action |
+|---|---|---|
+| ① **Factual error** | a figure, date, condition or classification is wrong | **Correct first.** Immediately, with evidence attached |
+| ② **Missing context** | the fact is right but the subject, condition, timeframe or scope is missing | Make the source **state the condition** so it gets rewritten |
+| ③ **Wording difference** | phrased differently, same meaning | **Not a correction target.** Move on |
+
+⚠️ Mistaking ③ for ① is the biggest waste in this procedure. "That is not what we call it"
+is not an error.
+
+### Whose problem is it
+
+**Absent from the answer entirely** is a content and distribution problem — marketing and PR own it.
+**Present but wrong** is a problem of standards — what counts as the official fact is decided by
+the executive or business owner. Without that line, correction requests stall between departments.
+
+### Three correction routes
+
+1. **Fix your own channel directly** — if the cause is a stale sentence or a missing condition
+   on your page, it ends here. This is the fastest and by far the most common cause. Look here first
+2. **Request a correction externally** — **the original publisher first**, the platform second.
+   A request without evidence (official page URL, as-of date) is usually declined
+3. **If you cannot fix it, strengthen the evidence** — instead of deleting the wrong statement,
+   make the accurate one exist on more surfaces, more recently
+   (`llmo.md` §2, `reputation.md` §3)
+
+⚠️ **A generative AI answer itself is reportable but not permanently fixable.** Answers are
+regenerated every time, so "fixed and verified" does not apply. What you fix is not the answer —
+it is **the source the answer reads.**
+
+### Prioritize by potential harm
+
+1. **Legal, financial, safety** — wrong pricing, contract terms, safety information. Immediately
+2. **Affects customer choice or transactions** — wrong service scope, availability, turnaround
+3. **Positioning and wording** — industry classification, tone of the blurb. Batch them quarterly
+
+If the same error repeats across several engines, it is not an individual answer that is wrong
+but a **shared source**. The cited-URL record from §2 points you at it.

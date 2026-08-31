@@ -57,6 +57,12 @@ else's data loses the citation to the origin.
 - [ ] **Paragraph-level citability**: when each paragraph carries [subject + figure + as-of date
       + method], it gets cited as a paragraph. Engines slice paragraphs, not pages
 
+**Owned and external have to say the same thing.** AI trusts a claim on your own page and takes
+it **when people outside — communities, press, social — are saying the same thing.** A claim
+stacked only on owned surfaces is half a claim. Reinforcement is not manufactured buzz: it is
+**giving people the same experience so they say the same thing.**
+→ Where to start on third-party surfaces: `reputation.md`.
+
 ## 4. Per-engine — ChatGPT
 
 - [ ] **Register with Bing Webmaster Tools** (one-click import from GSC, ~10 minutes).

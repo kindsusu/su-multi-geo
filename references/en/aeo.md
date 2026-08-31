@@ -30,6 +30,27 @@ extracted as the answer to none of them. URL, h1, and title reflect the question
       trust assessment
 - [ ] **Use tables**: engines parse tables as structured facts reliably
 
+### Writing so the extracted sentence cannot mislead — four checks
+
+If one sentence getting lifted is the premise, then **that sentence must not be wrong on its
+own.** Check all four, sentence by sentence.
+
+- [ ] **Conditions and exceptions inside the same sentence.** A condition living in the next
+      sentence is a condition that gets cut off
+- [ ] **Attach subject, period and basis to every figure.** A number alone becomes a number
+      that applies everywhere
+- [ ] **Separate fact from evaluation.** "two years" is a fact; "best in the industry" is an
+      evaluation. Mixed into one sentence, the evaluation gets cited as fact too
+- [ ] **Every sentence complete in subject and meaning.** "in this case", "as mentioned above"
+      are meaningless once extracted
+
+**Bad** — the condition is in the next sentence, and fact is fused with evaluation:
+> The warranty period is two years, the best in the industry. Consumables and user damage are excluded.
+
+**Good** — condition, exception and basis in one sentence, evaluation dropped:
+> The standard warranty runs two years from the purchase date and excludes consumables and
+> damage caused by user error (as of 2026-08, units sold through official domestic channels).
+
 ## FAQ blocks
 
 - [ ] An FAQ section at the foot of the page, built from 3–5 questions people really search

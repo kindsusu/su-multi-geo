@@ -90,7 +90,7 @@ bash scripts/audit.sh example.com
 ## 구성
 
 ```
-SKILL.md                 운영 절차 — Phase 0 ~ 6
+SKILL.md                 운영 절차 — Phase 0 ~ 8
 references/
 ├── crawlers.md          4개 벤더 9개 UA + Google-Extended 예외
 ├── seo.md               기술 기반 — SSR·사이트맵·JSON-LD·응답 위생
@@ -99,7 +99,8 @@ references/
 ├── geo.md               엔진별 레인 매트릭스와 결정 지점
 ├── llmo.md              엔티티 일관성·학습 표면·분기 검증
 ├── neo-naver.md         서치어드바이저·AI 브리핑 인용 요건·블로그 투트랙
-└── measure.md           기준선 → 14일 재측정 → 엔진별 인용 측정 프로토콜
+├── reputation.md        제3자 평판 표면 — 네 축·채용 플랫폼 프로필·담당 지정
+└── measure.md           기준선 → 14일 재측정 → 엔진별 인용 측정 프로토콜 → 오인용 정정
 scripts/audit.sh         Phase 0 크롤러 눈 진단
 ```
 

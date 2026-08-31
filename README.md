@@ -90,7 +90,7 @@ Checks what a crawler actually sees — not what's in your source:
 ## What's inside
 
 ```
-SKILL.md                 Operating procedure — Phase 0 through 6
+SKILL.md                 Operating procedure — Phase 0 through 8
 references/
 ├── crawlers.md          9 user-agents across 4 vendors + the Google-Extended exception
 ├── seo.md               Technical foundation — SSR, sitemap, JSON-LD, response hygiene
@@ -99,7 +99,8 @@ references/
 ├── geo.md               Per-engine lane matrix and what decides each one
 ├── llmo.md              Entity consistency, training surfaces, quarterly verification
 ├── neo-naver.md         Search Advisor, AI Briefing citation requirements, two-track blogs
-└── measure.md           Baseline → 14-day re-measure → per-engine citation protocol
+├── reputation.md        Third-party reputation surfaces — the four axes, job-board profiles, ownership
+└── measure.md           Baseline → 14-day re-measure → per-engine citation protocol → corrections
 scripts/audit.sh         Phase 0 crawler-eye audit
 ```
 

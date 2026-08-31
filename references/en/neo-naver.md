@@ -38,6 +38,28 @@ domain**. The answer is both tracks:
   structured data page
 - Link naturally from blog posts to your data pages, but **no link spamming**
 
+### Why two tracks — each channel reaches different engines
+
+Naver Blog is a historically closed platform that has long shut out external crawlers, so
+citation measurements repeatedly show it **barely surfacing in the global generative engines
+(ChatGPT, Gemini, Claude lines).** Open-web blogs (Tistory and the like) do reach those
+engines. Measurements also repeatedly show that in Korea, **blogs, wikis, and communities —
+not press articles — are the center of AI citation**: transplanting a global PR-centric
+strategy tends not to work here.
+
+⚠️ These observations vary by category and point in time. **Measure with your own vertical's
+queries** (`measure.md` §2) — someone else's measurement is a directional hypothesis, never
+your number.
+
+> **Decide first whose answer you want to be; pick channels after that.**
+> The moment you choose a channel, you have also chosen which engines you can reach.
+
+- Targeting Naver search and AI Briefing → Naver Blog (inside)
+- Targeting ChatGPT and Gemini → **open-web channels are mandatory.** Stack everything inside
+  Naver and you do not exist for those engines
+- ⚠️ Uncontrollable wiki-type sites (Namuwiki and similar) carry a high citation share in Korea —
+  put their accuracy and freshness on **continuous monitoring** (`reputation.md` §3)
+
 ## 4. Additional items for local and offline businesses
 
 - [ ] Register on Naver Place and keep details accurate. Hours, phone, and address **must match

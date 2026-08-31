@@ -52,6 +52,23 @@ always the stronger evidence.
 - [ ] Attach 3–5 related questions as an FAQ block; split one out into its own page only when
       it grows big enough to stand alone
 
+### Format — one well-structured guide beats a page count
+
+- [ ] **Concentrate effort on a single comparison or roundup guide.** A well-built single
+      page carrying a substantial share of a domain's total citations — and covering hundreds
+      of keywords on its own — is a repeatedly observed pattern. One page carrying all the
+      conditions and criteria beats 30 thin ones
+- [ ] **Write for evaluation, not for feeling.** What cited pages have in common is
+      **structured decision criteria** — price, spec, terms, pros and cons laid out side by
+      side. Aspirational brand copy is not citation material
+- [ ] **Community-style Q&A absorbs a large share of evaluation-stage intent.** If the answer
+      to "has anyone used ○○", "A or B?" lives in a forum, the citation goes there too.
+      Designing your own Q&A (FAQ, support archive) in that shape is a GEO task in itself
+- [ ] ⚠️ **A report published only as a PDF does not reach the web.** However good it is, AI
+      cannot take it — publish the same content as a web page and keep the PDF as an attachment
+- [ ] **A report or statistics page with no methodology does not get adopted as evidence.**
+      Put the sample, the period and the calculation in the body
+
 ## 4. ⚠️ The cannibalization trap
 
 Splitting near-identical questions into separate pages makes them **eat each other.**
