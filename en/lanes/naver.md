@@ -82,3 +82,20 @@ your number.
 - AI Briefing citation is confirmable **only by searching in the app** — it does not appear in logs
 - Watch for the weekend-dip pattern: weekday-shaped topics going quiet on weekends is normal,
   and is evidence of real demand
+
+## 7. Secondary domestic engines — Daum / Kakao
+
+If you are doing the Korean market anyway, take these on the way. The demand does not yet
+justify its own lane — **a few lines on top of work you already do covers it.**
+
+- [ ] **Register with Daum Search** — Daum has no webmaster console, just a simple
+      submission form. Register the primary domain with a Kakao account (10 minutes, free)
+- [ ] When writing an explicit robots.txt, add one line allowing Daum's crawler, **Daumoa**
+- [ ] **Tistory is owned by Kakao** — pick Tistory as your open-web channel and you get
+      global-engine reach **and Daum search exposure at once** (the double effect in
+      `geo.md`'s channel map)
+- [ ] With local/offline touchpoints, keep **Kakao Map business info** matching the website
+      (same logic as the place listings in §4)
+- [ ] Add one or two Daum queries to the measurement set; observe quarterly
+- ℹ️ Which index Kakao's AI answers from is not publicly settled — treat it as an
+      observation target, not a fact. **Promote it to a lane when demand grows**
