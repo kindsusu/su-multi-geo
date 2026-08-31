@@ -69,6 +69,25 @@ always the stronger evidence.
 - [ ] **A report or statistics page with no methodology does not get adopted as evidence.**
       Put the sample, the period and the calculation in the body
 
+### Volume and freshness — what actually raises citations
+
+Citation doesn't count published posts; it hunts for **the paragraph that answers the
+question.** So "more" cuts both ways:
+
+| What kind of "more" | Effect |
+|---|---|
+| More pages covering **different questions** | ✅ wider surface of citation opportunities (one question = one page) |
+| The **same answer** repeated across posts | ❌ they cannibalize each other, and mass-repeated wording is itself a spam signal |
+| Disguised posting / reciprocal volume | ❌ the easier a channel is to abuse, the lower engines weight it |
+
+Freshness is a real signal — but **an updated page beats a new post**:
+
+- Keep the same URL, refresh the content, and state the **as-of date honestly**.
+  A long-stable address carrying fresh content is the strongest combination
+- Bumping the date without changing the content backfires once detected (`aeo.md` trust signals)
+- For fast-moving data (pricing, availability), "monthly refresh + one as-of line" beats
+  ten new posts
+
 ## 4. ⚠️ The cannibalization trap
 
 Splitting near-identical questions into separate pages makes them **eat each other.**
