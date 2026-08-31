@@ -16,8 +16,8 @@ case "$DOMAIN" in http*) URL="$DOMAIN" ;; *) URL="https://$DOMAIN" ;; esac
 BASE="${URL%/}"
 UA='Mozilla/5.0 (compatible; multi-geo-audit/1.0)'
 
-C()     { curl -sL  --max-time 20 -A "$UA" "$@"; }
-CODE()  { curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" "$1"; }
+C()     { curl -sL  --max-time 20 -A "$UA" -- "$@"; }
+CODE()  { curl -sL -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" -- "$1"; }
 COUNT() { grep -oi "$1" | wc -l | tr -d ' '; }
 NCHAR() { wc -m | tr -d ' '; }
 
@@ -98,11 +98,14 @@ echo "   네이버 소유확인: $([ -n "$NAVER_V" ] && echo '✅ naver-site-ver
 
 echo ""
 echo "── 2. robots / sitemap ──"
+RB_CODE=$(CODE "$BASE/robots.txt")
 RB="$(C "$BASE/robots.txt")"
-if [ -n "$RB" ]; then
-  echo "   robots.txt     : 있음"
+# 404를 200처럼 꾸민 HTML 오류 페이지를 robots.txt로 오인하지 않는다
+if [ "$RB_CODE" != "200" ] || printf '%s' "$RB" | head -1 | grep -qi '<'; then
+  echo "   robots.txt     : ❌ 없음 또는 비정상 (HTTP $RB_CODE)"
+  RB=""
 else
-  echo "   robots.txt     : ❌ 없음"
+  echo "   robots.txt     : 있음 (HTTP 200)"
 fi
 # 후보: robots.txt의 Sitemap: 선언(최대 3) + 표준 경로 2종
 SM_DECL=$(printf '%s' "$RB" | grep -iE '^[[:space:]]*sitemap:' | sed -E 's/^[[:space:]]*[Ss][Ii][Tt][Ee][Mm][Aa][Pp]:[[:space:]]*//' | tr -d '\r' | head -3)
@@ -111,8 +114,15 @@ if [ -n "$SM_DECL" ]; then
 else
   echo "   └ Sitemap 참조 : ❌ robots.txt에 없음"
 fi
+HOST=${BASE#*://}; HOST=${HOST%%/*}
 SM_FOUND=0
 for u in $SM_DECL "$BASE/sitemap.xml" "$BASE/sitemap_index.xml"; do
+  # robots.txt가 준 값을 그대로 믿지 않는다: http/https + 진단 대상 호스트만 접속
+  case "$u" in
+    http://"$HOST"/*|https://"$HOST"/*) : ;;
+    http://*|https://*) echo "   ${u}  ⚠️ 외부 도메인 선언 — 자동 접속 안 함, 수동 확인"; continue ;;
+    *) echo "   (무시된 Sitemap 값: $u — URL 형식 아님)"; continue ;;
+  esac
   SM_CODE=$(CODE "$u")
   printf '   %-40s HTTP %s' "${u#"$BASE"}" "$SM_CODE"
   if [ "$SM_CODE" = "200" ]; then
@@ -161,7 +171,6 @@ echo "── 5. 응답 위생 ──"
 echo "   404 동작       : HTTP $(CODE "$BASE/__multi_geo_404_probe__")  (404여야 정상)"
 echo "   리다이렉트 홉  : $(curl -sIL -o /dev/null -w '%{num_redirects}' --max-time 20 -A "$UA" "$BASE")"
 echo "   응답 시간      : $(curl -s -o /dev/null -w '%{time_total}' --max-time 20 -A "$UA" "$BASE")s"
-HOST=${BASE#*://}; HOST=${HOST%%/*}
 case "$HOST" in www.*) ALT="${HOST#www.}" ;; *) ALT="www.$HOST" ;; esac
 ALT_RES=$(curl -sI --max-time 15 -A "$UA" -o /dev/null -w '%{http_code} → %{redirect_url}' "https://$ALT" 2>/dev/null) \
   || ALT_RES="❌ 접속 불가 — TLS 인증서에 $ALT 미포함 또는 DNS 미설정 (한쪽 주소로 온 사용자·크롤러를 잃는다)"
