@@ -17,25 +17,6 @@ This skill splits them into lanes, tells you which control point actually decide
 
 ---
 
-## The correction most guides get wrong
-
-> **`Google-Extended` is not a crawler.**
-
-It has no user-agent. It never fetches a page. It is a robots.txt **token** evaluated against content Googlebot already crawled, deciding whether that content may be used for Gemini training and grounding.
-
-Three consequences fall out of this, and they change how you work:
-
-| | ChatGPT · Claude · Perplexity | **Gemini** |
-|---|---|---|
-| Index source | Own crawlers (ChatGPT also leans on Bing) | **Googlebot's index** |
-| Visible in server logs | ✅ Yes — grep the user-agents | ❌ **Never** |
-| Leading indicator | Crawler visit count | **GSC indexed-page count** |
-| Blocking it costs you | That engine's citations | Gemini grounding — but **not** Google Search rank |
-
-So **Gemini GEO = Google index optimization + `Google-Extended: Allow`.** If Googlebot can't reach a page, no amount of Gemini-specific work will. And you cannot watch crawler visits to predict a citation — you have to ask Gemini directly.
-
----
-
 ## Three layers — reach, citation, recall
 
 This skill treats optimization not as a list of lanes but as **three layers stacked bottom-up.**
