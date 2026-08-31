@@ -118,6 +118,12 @@ References are the Korean canon (`references/*.md`); `references/en/*.md` is the
 
 ---
 
+## Contributors
+
+- **[kindsusu](https://github.com/kindsusu)** — design, writing, maintenance
+- **Claude** (Anthropic) — drafting, revisions, audit-script pairing
+- **Codex** (OpenAI) — adversarial code review (found 3 security/false-reading defects)
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

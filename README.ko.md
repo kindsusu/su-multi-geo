@@ -118,6 +118,12 @@ scripts/audit.sh         Phase 0 크롤러 눈 진단
 
 ---
 
+## 기여자
+
+- **[kindsusu](https://github.com/kindsusu)** — 설계·저술·운영
+- **Claude** (Anthropic) — 초안·개정·진단 스크립트 페어 작업
+- **Codex** (OpenAI) — 적대적 코드 리뷰 (보안·오진 결함 3건 발견)
+
 ## 라이선스
 
 MIT — [LICENSE](LICENSE) 참조.
