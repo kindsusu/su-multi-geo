@@ -44,7 +44,7 @@
 
 ## 2. 공통 — 크롤러 허용
 
-`references/crawlers.md`를 읽고 robots.txt를 확정한다. **이게 0순위다.**
+`ops/crawlers.md`를 읽고 robots.txt를 확정한다. **이게 0순위다.**
 막혀 있으면 아래 전부가 도달하지 않는다.
 
 ## 3. 공통 — 1차 소스 되기 (GEO의 본체)

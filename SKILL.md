@@ -25,7 +25,7 @@ description: SEO·AEO·GEO(ChatGPT·Gemini·Claude·Perplexity)·LLMO·NEO(네�
 
 ## Phase 0 — 진단
 
-도메인(또는 로컬 프로젝트)을 받아 `scripts/audit.sh <도메인>`을 실행하거나 동등한 curl을
+도메인(또는 로컬 프로젝트)을 받아 `tools/audit.sh <도메인>`을 실행하거나 동등한 curl을
 직접 돌린다. **noindex가 최우선 점검이다** — 스테이징용 noindex의 프로덕션 배포는 다른
 모든 최적화를 무효로 만든다. `<meta name="robots">`와 `X-Robots-Tag` 헤더 **둘 다** 본다.
 
@@ -43,7 +43,7 @@ description: SEO·AEO·GEO(ChatGPT·Gemini·Claude·Perplexity)·LLMO·NEO(네�
 | 평판(제3자) | ⚠️ | 채용 사이트 회사 정보가 2년 전 조직 기준 |
 
 ## Phase 1 — 크롤러 정책 (0순위)
-`references/crawlers.md`를 읽고 robots.txt를 확정한다. **진단 직후 가장 먼저 한다** —
+`ops/crawlers.md`를 읽고 robots.txt를 확정한다. **진단 직후 가장 먼저 한다** —
 크롤링이 막혀 있으면 아래 작업 전부가 도달하지 않는다. 벤더별 UA와 Google-Extended
 예외를 확인하고, `curl`로 배포된 robots.txt를 다시 읽어 확정한다.
 
@@ -72,32 +72,32 @@ description: SEO·AEO·GEO(ChatGPT·Gemini·Claude·Perplexity)·LLMO·NEO(네�
 - 확정된 메시지와 근거는 Phase 4(의도 랜딩)·Phase 6(평판 표면)에서 **같은 문구로** 재사용한다
 
 ## Phase 3 — SEO 기반
-`references/seo.md`. 순서: 콘텐츠 SSR 공개 → 사이트맵(대형이면 샤딩) → 메타(제목 영문
+`lanes/seo.md`. 순서: 콘텐츠 SSR 공개 → 사이트맵(대형이면 샤딩) → 메타(제목 영문
 50-60·한글 25-30 / 설명 영문 150-160·한글 70-80) → JSON-LD → canonical → 함정 점검
 (CSR 바일아웃, 404 캐시).
 
 ## Phase 4 — 의도 랜딩
-`references/intent.md`. "사람들이 검색창에 치는 질문"을 GSC·서치어드바이저·자동완성·
+`ops/intent.md`. "사람들이 검색창에 치는 질문"을 GSC·서치어드바이저·자동완성·
 CS 문의에서 발굴해 목록화하고 **질문 하나 = 페이지 하나**로 설계한다.
 각 페이지: URL·h1이 질문을 그대로 반영 / 첫 문단에서 40자 내외 직답 / 아래에 근거 데이터
 (표·수치·기준일). 답이 같은 질문을 여러 페이지로 쪼개지 마라 (카니발라이제이션).
 
 ## Phase 5 — AEO + GEO + LLMO
-`references/aeo.md` → `references/geo.md` → `references/llmo.md`.
+`lanes/aeo.md` → `lanes/geo.md` → `lanes/llmo.md`.
 겹치는 작업(구조화 데이터, 인용 가능한 문단)은 한 번만 하되 각 레인의 검증을 따로 통과시킨다.
 
 ## Phase 6 — 평판 표면
-`references/reputation.md`. 여기까지가 "우리가 만든 자료"였다. AI가 회사·브랜드를 설명할 때
+`lanes/reputation.md`. 여기까지가 "우리가 만든 자료"였다. AI가 회사·브랜드를 설명할 때
 읽는 나머지 절반은 **제3자가 쓴 평판 자료**다 — 채용 사이트 회사·면접 후기, 비즈니스 프로필,
 협회 프로필, 위키·커뮤니티. 통제 가능/불가로 나눠 대응하고 **담당 부서를 지정한다.**
 지정하지 않으면 아무도 안 본다.
 
 ## Phase 7 — NEO (네이버)
-한국 시장 대상이면 필수. `references/neo-naver.md`. 서치어드바이저 등록은 사용자 계정이
+한국 시장 대상이면 필수. `lanes/naver.md`. 서치어드바이저 등록은 사용자 계정이
 필요하므로 절차를 안내하고, 나머지는 직접 구현한다.
 
 ## Phase 8 — 측정 루프
-`references/measure.md`. 기준선 기록 → 14일 후 재측정 일정 확정 → 지표 추적 세팅.
+`ops/measure.md`. 기준선 기록 → 14일 후 재측정 일정 확정 → 지표 추적 세팅.
 **"고쳤다"로 끝나는 보고는 실패다.** "언제 무엇을 다시 재는지"까지가 완료 조건이다.
 
 ## 소스 접근 불가 모드

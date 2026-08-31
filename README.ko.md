@@ -1,5 +1,7 @@
 # su-multi-GEO
 
+![su-multi-GEO — 다섯 엔진, 하나의 진단 렌즈](assets/su-multi-geo.png)
+
 > 멀티 엔진 GEO — **su**(권수, [kindsusu](https://github.com/kindsusu))가 직접 다듬는 스킬
 
 <p align="center">
@@ -34,19 +36,33 @@ user-agent가 없다. 페이지를 가져오지도 않는다. Googlebot이 **이
 
 ---
 
-## 레인 다섯 개, 각자 다른 상대
+## 세 층으로 쌓는다 — 도달 → 인용 → 각인
 
-같은 "검색 최적화"라도 상대하는 엔진이 다르고, 손댈 지점이 다르다.
+이 스킬은 최적화를 "레인 목록"이 아니라 **아래에서 위로 쌓이는 세 층**으로 다룬다.
+아래층이 비어 있으면 위층 작업은 도달하지 않는다.
 
-| 레인 | 상대 | 핵심 질문 | 주기 |
-|---|---|---|---|
-| **SEO** | 구글·빙 크롤러 | 크롤러가 읽고 색인할 수 있는가 | 주 |
-| **AEO** | AI Overviews · Copilot | 답변 박스가 인용하는가 | 주~월 |
-| **GEO** | ChatGPT · Gemini · Claude · Perplexity | 생성 AI가 **1차 소스**로 쓰는가 | 주~월 |
-| **LLMO** | 모델의 지식 자체 | 검색 없이도 브랜드를 아는가 | **분기** |
-| **NEO** | 네이버 검색 · AI 브리핑 | 한국 시장의 절반이 인용하는가 | 주 |
+```
+        ┌───────────────────────────────────────────────┐
+  ③ 각인 │ 검색 없이도 우리를 아는가                      │  분기 주기
+        │ · llmo — 모델의 지식에 브랜드를 심는다          │
+        │ · reputation — 제3자 평판이 우리를 설명한다     │
+        ├───────────────────────────────────────────────┤
+  ② 인용 │ 답을 만들 때 우리를 근거로 쓰는가              │  주~월 주기
+        │ · aeo — 답변 박스 (AI Overviews · Copilot)     │
+        │ · geo — 생성 엔진 (ChatGPT·Gemini·Claude·Pplx) │
+        │ · naver — AI 브리핑 + 네이버 검색               │
+        ├───────────────────────────────────────────────┤
+  ① 도달 │ 크롤러가 읽고 색인할 수 있는가                 │  주 주기
+        │ · seo — SSR·사이트맵·구조화 데이터              │
+        │ · ops/crawlers — 봇 정책이 문을 여는가          │
+        └───────────────────────────────────────────────┘
+```
 
-**NEO가 이 저장소를 영문으로도 내는 이유다.** 글로벌 SEO·GEO 가이드는 네이버를 아예 다루지 않는데, 네이버 AI 브리핑은 **문단 단위로 출처 칩**을 단다. 산문 덩어리보다 라벨-값 구조를 인용하는, 구조적으로 다른 표적이다.
+층마다 상대하는 엔진, 손대는 지점, 측정 주기가 다르다 — 그래서 파일도 층 단위(`lanes/`)와
+층을 가로지르는 절차(`ops/`)로 나뉜다.
+
+**naver 레인이 이 저장소를 영문으로도 내는 이유다.** 글로벌 가이드는 네이버를 다루지 않지만,
+네이버 AI 브리핑은 문단 단위 출처 칩이라는 구조적으로 다른 표적이다.
 
 ---
 
@@ -76,7 +92,7 @@ git clone https://github.com/kindsusu/su-multi-geo.git .claude/skills/su-multi-g
 ## Phase 0 — 한 줄 진단
 
 ```bash
-bash scripts/audit.sh example.com
+bash tools/audit.sh example.com
 ```
 
 소스에 뭐가 있는지가 아니라 **크롤러가 실제로 보는 것**을 확인한다:
@@ -92,21 +108,23 @@ bash scripts/audit.sh example.com
 ## 구성
 
 ```
-SKILL.md                 운영 절차 — Phase 0 ~ 8
-references/
-├── crawlers.md          4개 벤더 9개 UA + Google-Extended 예외
-├── seo.md               기술 기반 — SSR·사이트맵·JSON-LD·응답 위생
-├── intent.md            질문 발굴·선별·페이지 매핑·카니발라이제이션 회피
-├── aeo.md               답변 추출·FAQ·E-E-A-T·Bing 등록
-├── geo.md               엔진별 레인 매트릭스와 결정 지점
-├── llmo.md              엔티티 일관성·학습 표면·분기 검증
-├── neo-naver.md         서치어드바이저·AI 브리핑 인용 요건·블로그 투트랙
-├── reputation.md        제3자 평판 표면 — 네 축·채용 플랫폼 프로필·담당 지정
-└── measure.md           기준선 → 14일 재측정 → 엔진별 인용 측정 프로토콜 → 오인용 정정
-scripts/audit.sh         Phase 0 크롤러 눈 진단
+SKILL.md                 운영 절차 — Phase 0 ~ 8 (진단 → 승인 → 구현 → 측정)
+lanes/                   층별 실행 지침
+├── seo.md               ① 도달 — SSR·사이트맵·JSON-LD·응답 위생
+├── aeo.md               ② 인용 — 답변 추출·FAQ·E-E-A-T·Bing 등록
+├── geo.md               ② 인용 — 엔진별 매트릭스와 결정 지점
+├── naver.md             ② 인용 — 서치어드바이저·AI 브리핑·블로그 투트랙
+├── llmo.md              ③ 각인 — 엔티티 일관성·학습 표면·분기 검증
+└── reputation.md        ③ 각인 — 제3자 평판 표면·채용 프로필·담당 지정
+ops/                     층을 가로지르는 절차
+├── crawlers.md          봇 정책 — 4개 벤더 9개 UA + Google-Extended 예외
+├── intent.md            질문 발굴·선별·페이지 매핑·포맷
+└── measure.md           기준선 → 재측정 → 인용 측정 → 오인용 정정
+tools/audit.sh           Phase 0 크롤러 눈 진단 (+ test_audit.sh)
+en/                      영문 미러 (lanes/·ops/ 동일 구조)
 ```
 
-`references/*.md`가 국문 정본이고 `references/en/*.md`는 사람 독자용 영문 미러다. 에이전트는 국문판을 읽는다.
+`lanes/`·`ops/`가 국문 정본이고 `en/`은 사람 독자용 영문 미러다. 에이전트는 국문판을 읽는다.
 
 ---
 

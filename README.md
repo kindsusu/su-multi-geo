@@ -1,5 +1,7 @@
 # su-multi-GEO
 
+![su-multi-GEO — five engines, one audit lens](assets/su-multi-geo.png)
+
 > multi-engine GEO, hand-tuned by **su** ([kindsusu](https://github.com/kindsusu))
 
 <p align="center">
@@ -34,19 +36,35 @@ So **Gemini GEO = Google index optimization + `Google-Extended: Allow`.** If Goo
 
 ---
 
-## Five lanes
+## Three layers — reach, citation, recall
 
-Same "search optimization," different engines, different control points.
+This skill treats optimization not as a list of lanes but as **three layers stacked bottom-up.**
+If a lower layer is empty, nothing you do above it ever arrives.
 
-| Lane | Faces | The question | Cycle |
-|---|---|---|---|
-| **SEO** | Google · Bing crawlers | Can the crawler read and index this at all? | weekly |
-| **AEO** | AI Overviews · Copilot | Does the answer box cite us? | weekly–monthly |
-| **GEO** | ChatGPT · Gemini · Claude · Perplexity | Does the generative engine use us as a **primary source**? | weekly–monthly |
-| **LLMO** | The model's own knowledge | Does it know the brand without searching? | **quarterly** |
-| **NEO** | Naver search · AI Briefing | Does Korea's dominant engine cite us? | weekly |
+```
+        ┌──────────────────────────────────────────────────┐
+ ③ recall │ Does it know us without searching?              │ quarterly
+        │ · llmo — plant the brand in model knowledge       │
+        │ · reputation — third parties describe us          │
+        ├──────────────────────────────────────────────────┤
+ ② citation │ Are we the evidence inside the answer?        │ weekly–monthly
+        │ · aeo — answer boxes (AI Overviews · Copilot)     │
+        │ · geo — generative engines (ChatGPT·Gemini·…)     │
+        │ · naver — AI Briefing + Naver search              │
+        ├──────────────────────────────────────────────────┤
+ ① reach  │ Can crawlers read and index us at all?          │ weekly
+        │ · seo — SSR, sitemap, structured data             │
+        │ · ops/crawlers — does bot policy open the door?   │
+        └──────────────────────────────────────────────────┘
+```
 
-**NEO is why this repo exists in English.** Global SEO/GEO guides skip Naver entirely, and Naver AI Briefing cites at the *paragraph* level with source chips — a structurally different target that rewards label-value grids over prose.
+Each layer faces different engines, different control points, and a different measurement
+cycle — which is why the files split into per-layer lanes (`lanes/`) and cross-layer
+procedures (`ops/`).
+
+**The naver lane is why this repo exists in English.** Global guides skip Naver entirely,
+but Naver AI Briefing cites at the paragraph level with source chips — a structurally
+different target.
 
 ---
 
@@ -76,7 +94,7 @@ Then just ask: *"audit my site's SEO"*, *"get Gemini to cite us"*, *"create llms
 ## Phase 0 in one command
 
 ```bash
-bash scripts/audit.sh example.com
+bash tools/audit.sh example.com
 ```
 
 Checks what a crawler actually sees — not what's in your source:
@@ -92,21 +110,23 @@ Checks what a crawler actually sees — not what's in your source:
 ## What's inside
 
 ```
-SKILL.md                 Operating procedure — Phase 0 through 8
-references/
-├── crawlers.md          9 user-agents across 4 vendors + the Google-Extended exception
-├── seo.md               Technical foundation — SSR, sitemap, JSON-LD, response hygiene
-├── intent.md            Finding, filtering and mapping the questions worth a page
-├── aeo.md               Answer extraction, FAQ blocks, E-E-A-T, Bing registration
-├── geo.md               Per-engine lane matrix and what decides each one
-├── llmo.md              Entity consistency, training surfaces, quarterly verification
-├── neo-naver.md         Search Advisor, AI Briefing citation requirements, two-track blogs
-├── reputation.md        Third-party reputation surfaces — the four axes, job-board profiles, ownership
-└── measure.md           Baseline → 14-day re-measure → per-engine citation protocol → corrections
-scripts/audit.sh         Phase 0 crawler-eye audit
+SKILL.md                 The operating procedure — Phase 0-8 (audit → approve → build → measure)
+lanes/                   Per-layer playbooks
+├── seo.md               ① reach — SSR, sitemap, JSON-LD, response hygiene
+├── aeo.md               ② citation — answer extraction, FAQ, E-E-A-T, Bing
+├── geo.md               ② citation — per-engine matrix and control points
+├── naver.md             ② citation — Search Advisor, AI Briefing, two-track blogs
+├── llmo.md              ③ recall — entity consistency, training surfaces
+└── reputation.md        ③ recall — third-party surfaces, job-board profiles, ownership
+ops/                     Cross-layer procedures
+├── crawlers.md          Bot policy — 9 UAs across 4 vendors + Google-Extended
+├── intent.md            Question discovery, selection, mapping, format
+└── measure.md           Baseline → re-measure → citation protocol → corrections
+tools/audit.sh           Phase 0 crawler-eye audit (+ test_audit.sh)
+en/                      English mirror (same lanes/ + ops/ layout)
 ```
 
-References are the Korean canon (`references/*.md`); `references/en/*.md` is the English mirror for human readers.
+References are the Korean canon (`*.md`); `en/*.md` is the English mirror for human readers.
 
 ---
 
