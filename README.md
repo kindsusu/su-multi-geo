@@ -154,5 +154,3 @@ References are the Korean canon (`*.md`); `en/*.md` is the English mirror for hu
 - **Free for personal, nonprofit, educational, and research use**
 - **Commercial or corporate use is not permitted** under this license — for a separate
   commercial license, contact **scitusu@gmail.com**
-
-(Copies obtained before 2026-08-31 under MIT retain that license.)
