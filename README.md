@@ -104,6 +104,31 @@ See [`tools/README.md`](tools/README.md) (Korean) for the full contract.
 
 ---
 
+## After Phase 0 — draft the files you have to change
+
+The same `audit.json` drives the generator:
+
+```bash
+cp templates/site.example.json out/example.com/site.json    # fill in your company's facts
+python tools/generate.py all out/example.com/audit.json --site out/example.com/site.json
+# → out/example.com/deploy/ : robots.txt · sitemap.xml · llms.txt · jsonld/ · meta-draft.csv
+#                             + DEPLOY.md (deployment instructions)
+```
+
+- **The existing robots.txt is preserved.** No `Disallow` is removed or loosened, and a
+  crawler that is already blocked is never flipped to allow — the before/after diff goes
+  into `DEPLOY.md`
+- The sitemap carries only URLs that are 200, not noindexed, and self-canonical.
+  `lastmod` is omitted rather than invented
+- **Nothing is made up.** Values come from measurement (`audit.json`) and from the facts you
+  wrote (`site.json`); everything else is left as `<<TODO: ...>>`. FAQ entries are used only
+  when their `page_url` was actually crawled, and a human verifies the wording matches the
+  visible text character for character
+- **Everything is a draft.** A human reviews it and a human deploys it — `DEPLOY.md` carries
+  the post-deploy `curl` checks, the rollback, and the remaining TODOs
+
+---
+
 ## What's inside
 
 ```
@@ -119,12 +144,14 @@ ops/                     Cross-layer procedures
 ├── crawlers.md          Bot policy — 9 UAs across 4 vendors + Google-Extended
 ├── intent.md            Question discovery, selection, mapping, format
 └── measure.md           Baseline → re-measure → citation protocol → corrections
-tools/                   Audit tooling, zero dependencies — see tools/README.md
+tools/                   Audit and generator tooling, zero dependencies — see tools/README.md
 ├── audit.sh             Quick one-page audit (+ test_audit.sh)
 ├── crawl.py             Full-site audit → audit.json
-└── report.py            audit.json → self-contained HTML report
-templates/               Report template (report.html) + glossary.json
-tests/                   Unit tests for crawl.py and report.py (no network)
+├── report.py            audit.json → self-contained HTML report
+└── generate.py          audit.json + site.json → deployable drafts + DEPLOY.md
+templates/               Report template (report.html), glossary.json,
+                         site.example.json (the facts you fill in)
+tests/                   Unit tests for crawl.py, report.py, generate.py (no network)
 en/                      English mirror (same lanes/ + ops/ layout)
 ```
 

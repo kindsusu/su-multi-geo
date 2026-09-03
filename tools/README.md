@@ -7,7 +7,10 @@
 | `audit.sh` | 홈 1페이지 빠른 진단 | 도메인 | 콘솔 |
 | `crawl.py` | 사이트 전수 진단 | 도메인 | `out/<host>/audit.json` + 콘솔 |
 | `report.py` | 진단 결과 → 보고서 | `audit.json` | `report.html` |
+| `generate.py` | 진단 결과 → 배포 산출물 초안 | `audit.json` (+ `site.json`) | `out/<host>/deploy/` + `DEPLOY.md` |
 | `test_audit.sh` | audit.sh 회귀 테스트 | — | PASS/FAIL |
+
+흐름은 `crawl.py` → `report.py`(사람에게 보고) → `generate.py`(고칠 파일 초안) 순이다.
 
 ## audit.sh — 빠른 1페이지 진단
 
@@ -90,9 +93,67 @@ python tools/report.py out/example.com/audit.json --lang en --out reports/en.htm
 - 용어 사전: `templates/glossary.json` (`ko`/`en`) — 본문의 용어에 자동으로 툴팁이 붙는다
 - 외부 입력(페이지 title·URL·findings 메시지)은 전부 HTML 이스케이프한다
 
+## generate.py — 배포 산출물 초안
+
+```bash
+python tools/generate.py all out/example.com/audit.json --site out/example.com/site.json
+python tools/generate.py robots out/example.com/audit.json
+python tools/generate.py meta out/example.com/audit.json --out /tmp/draft
+```
+
+| 서브커맨드 | 입력 | 출력 |
+|---|---|---|
+| `sitemap` | 크롤한 페이지 | `sitemap.xml` (한도 초과 시 `sitemap_index.xml` + 분할) |
+| `robots` | 기존 robots.txt 원문 + UA 실효 정책 | `robots.txt` (기존 보존 + AI 크롤러 명시 + `Sitemap:`) |
+| `llms` | 섹션 대표 URL + `site.json` | `llms.txt` |
+| `jsonld` | `site.json` + 크롤한 경로 구조 | `jsonld/*.json` + `jsonld/*.snippet.html` |
+| `meta` | 페이지별 h1·title·설명 | `meta-draft.csv` / `meta-draft.json` (검토용) |
+| `deploy` | 위 전부 | `DEPLOY.md` 배포 지시서 |
+| `all` | — | 위 전부를 `out/<host>/deploy/`에 |
+
+옵션: `--site <site.json>` (없으면 회사 사실 없이 만들 수 있는 것만), `--out <폴더>`
+(기본 `audit.json` 옆의 `deploy/`).
+
+### 무엇을 지어내지 않는가
+
+이 도구는 **초안 생성기**다. 값의 출처는 둘뿐이다 — `audit.json`의 실측값과 `site.json`에
+사람이 적어 준 사실. 그 밖의 칸은 `<<TODO: ...>>` 표식으로 남긴다.
+
+- 사이트맵 `lastmod` — 실제 수정일을 모르므로 태그 자체를 넣지 않는다
+- llms.txt의 한 줄 소개·페이지 설명·데이터 정책 — 전부 TODO
+- Organization의 빈 필드 — TODO가 아니라 **아예 생략**한다 (LD에 빈 값을 넣지 않는다).
+  `sameAs`는 `site.json`의 `same_as`에서만 온다
+- FAQPage — `site.json`의 `faqs` 중 **크롤된 page_url**에 붙은, q·a가 모두 있는 것만
+- Product `offers` — `price`와 `currency`가 둘 다 있을 때만. 가격은 절대 만들지 않는다
+- description 초안 — 페이지에 이미 있는 문장(기존 meta description·og:description)만 후보로
+  쓴다. 없으면 TODO. `audit.json`에는 본문 텍스트가 없으므로 첫 문장 추출은 사람 몫이다
+
+BreadcrumbList만은 크롤한 URL 경로와 페이지 title에서 **실측 기반으로** 자동 생성한다.
+
+### robots.txt를 다루는 규칙
+
+- 기존 원문을 **그대로 보존**하고 그 뒤에 블록을 덧붙인다. 기존 `Disallow`는 지우지도
+  완화하지도 않는다
+- 이미 차단된 UA(`explicit-block`·`star-block`)는 허용으로 뒤집지 않는다 —
+  `DEPLOY.md`에 "차단 유지 — 의도 확인 필요"로 적는다
+- 이미 명시된 UA는 건드리지 않는다
+- `User-agent: *`에 부분 제한이 걸린 사이트에서는 그 제한 규칙을 **글자 그대로 복사**해
+  UA 그룹을 만든다 (현재 실효 정책과 동일 — 넓히지 않는다)
+- 전/후 unified diff를 `DEPLOY.md`에 싣는다
+
+### site.json — 사용자가 채우는 회사 사실
+
+`templates/site.example.json`을 `out/<host>/site.json`으로 복사해 값을 바꾼다.
+키: `name` `legal_name` `url` `logo` `description`(우산 메시지 한 문장) `same_as[]`
+`contact{phone,email}` `address{street,locality,region,postal_code,country}`
+`founding_year` `faqs[{q,a,page_url}]` `products[{page_url,name,offers{price,currency,unit}}]`.
+
+**모르는 값은 빈 문자열로 두거나 키를 지운다.** 빈 값은 생략되거나 TODO로 남고,
+지어낸 값은 인용 신뢰를 죽인다.
+
 ## 테스트
 
 ```bash
 bash tools/test_audit.sh          # audit.sh
-python -m unittest discover tests # crawl.py + report.py (네트워크 없음)
+python -m unittest discover tests # crawl.py + report.py + generate.py (네트워크 없음)
 ```

@@ -1,0 +1,57 @@
+{
+  "_readme": [
+    "generate.py에 넘기는 '회사 사실' 파일이다. out/<host>/site.json으로 복사해 쓴다.",
+    "여기 적힌 값은 example.com 예시다 — 전부 우리 회사의 실제 사실로 바꿔라.",
+    "모르는 값은 지어내지 말고 빈 문자열로 두거나 키를 지워라. 비면 생성기가 그 항목을 생략하거나",
+    "<<TODO: ...>> 표식으로 남긴다. 지어낸 값은 인용 신뢰를 죽인다.",
+    "faqs의 질문·답변은 해당 페이지 화면에 글자 그대로 있는 문장이어야 한다 (lanes/aeo.md).",
+    "products의 가격은 그 페이지에 실제 표시된 가격이어야 한다."
+  ],
+
+  "name": "예시 주식회사",
+  "legal_name": "주식회사 예시",
+  "url": "https://example.com/",
+  "logo": "https://example.com/logo.png",
+  "description": "우산 메시지 한 문장 — 우리는 [우선 고객]이 [문제]를 해결하도록 [검증 가능한 방식]으로 돕는다.",
+
+  "same_as": [
+    "https://www.linkedin.com/company/example",
+    "https://www.youtube.com/@example"
+  ],
+
+  "contact": {
+    "phone": "+82-2-0000-0000",
+    "email": "hello@example.com"
+  },
+
+  "address": {
+    "street": "예시로 1",
+    "locality": "서울",
+    "region": "서울특별시",
+    "postal_code": "00000",
+    "country": "KR"
+  },
+
+  "founding_year": "2015",
+
+  "faqs": [
+    {
+      "page_url": "https://example.com/pricing",
+      "q": "요금은 언제 갱신되나요?",
+      "a": "매일 오전 9시에 갱신합니다."
+    }
+  ],
+
+  "products": [
+    {
+      "page_url": "https://example.com/pricing",
+      "name": "예시 표준 요금제",
+      "description": "",
+      "offers": {
+        "price": "30000",
+        "currency": "KRW",
+        "unit": "1일 기준"
+      }
+    }
+  ]
+}

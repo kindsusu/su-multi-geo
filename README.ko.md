@@ -101,6 +101,28 @@ python tools/report.py out/example.com/audit.json    # → out/example.com/repor
 
 ---
 
+## Phase 0 다음 — 고칠 파일 초안 만들기
+
+진단이 끝나면 같은 `audit.json`으로 배포 산출물 초안을 뽑는다:
+
+```bash
+cp templates/site.example.json out/example.com/site.json    # 회사 사실을 채운다
+python tools/generate.py all out/example.com/audit.json --site out/example.com/site.json
+# → out/example.com/deploy/ : robots.txt · sitemap.xml · llms.txt · jsonld/ · meta-draft.csv
+#                             + DEPLOY.md (배포 지시서)
+```
+
+- **기존 robots.txt는 보존한다.** 기존 `Disallow`를 지우거나 완화하지 않고, 이미 차단된
+  크롤러는 허용으로 뒤집지 않는다 — 전/후 diff가 `DEPLOY.md`에 실린다
+- 사이트맵에는 200 · noindex 아님 · canonical이 자기 자신인 URL만 싣고, 모르는 `lastmod`는
+  **넣지 않는다**
+- **지어내지 않는다.** 값은 실측(`audit.json`)과 사용자가 적은 사실(`site.json`)에서만 오고,
+  빈 칸은 `<<TODO: ...>>`로 남는다. FAQ는 `site.json`에 적힌 것 중 **크롤된 페이지**의
+  문답만 쓰고, 그것이 화면 텍스트와 글자 그대로 같은지는 사람이 대조한다
+- **전부 초안이다.** 사람이 검토하고 사람이 배포한다 (`DEPLOY.md`에 검증 curl·롤백·TODO 포함)
+
+---
+
 ## 구성
 
 ```
@@ -116,12 +138,14 @@ ops/                     층을 가로지르는 절차
 ├── crawlers.md          봇 정책 — 4개 벤더 9개 UA + Google-Extended 예외
 ├── intent.md            질문 발굴·선별·페이지 매핑·포맷
 └── measure.md           기준선 → 재측정 → 인용 측정 → 오인용 정정
-tools/                   진단 도구 (의존성 0) — tools/README.md 참조
+tools/                   진단·생성 도구 (의존성 0) — tools/README.md 참조
 ├── audit.sh             빠른 1페이지 진단 (+ test_audit.sh)
 ├── crawl.py             전수 진단 → audit.json
-└── report.py            audit.json → 독립 HTML 보고서
-templates/               보고서 템플릿 (report.html) + 용어 사전 (glossary.json)
-tests/                   crawl.py·report.py 유닛 테스트 (네트워크 없음)
+├── report.py            audit.json → 독립 HTML 보고서
+└── generate.py          audit.json + site.json → 배포 산출물 초안 + DEPLOY.md
+templates/               보고서 템플릿 (report.html) · 용어 사전 (glossary.json)
+                         · site.example.json (회사 사실 입력 양식)
+tests/                   crawl.py·report.py·generate.py 유닛 테스트 (네트워크 없음)
 en/                      영문 미러 (lanes/·ops/ 동일 구조)
 ```
 
