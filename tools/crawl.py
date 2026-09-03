@@ -325,8 +325,13 @@ class PageParser(HTMLParser):
         self._text.append(data)
 
     @property
+    def text(self) -> str:
+        """가시 텍스트 — 태그·script·style 제거 후 공백 정규화."""
+        return WS.sub(" ", "".join(self._text)).strip()
+
+    @property
     def text_chars(self) -> int:
-        return len(WS.sub(" ", "".join(self._text)).strip())
+        return len(self.text)
 
 
 def jsonld_types(blocks) -> list:

@@ -129,6 +129,35 @@ python tools/generate.py all out/example.com/audit.json --site out/example.com/s
 
 ---
 
+## After deployment — prove it, with the crawler's eyes
+
+```bash
+python tools/verify.py deploy out/example.com/audit.json   # right after deployment
+# → verify.json + VERIFY.md · exit code 1 if anything failed
+
+python tools/crawl.py example.com --out out/after          # re-crawl 14 days later
+python tools/verify.py diff out/example.com/audit.json out/after/example.com/audit.json
+```
+
+A file sitting in the package proves nothing. `verify.py` **fetches the live site again**
+and rules on each item:
+
+- **new noindex first** — if the deployment introduced one, nothing else matters
+- every original robots.txt line still served, and the added UA blocks actually in effect
+  (policy re-adjudicated, not string-matched)
+- **every** sitemap `<loc>` returns 200, none is noindexed, none disagrees with its canonical
+- a leftover `<<TODO` in llms.txt fails the run as an incomplete deployment
+- **JSON-LD that says things the page does not** — FAQ questions and answers, organization
+  name, product name and price must appear verbatim in the visible text, or it fails as a
+  spam risk
+- `diff` reports findings resolved/new/persisting, lane scores before and after, and URLs
+  that disappeared
+
+It never requests a host other than the target (redirect destinations are re-checked).
+Full check list in [`tools/README.md`](tools/README.md).
+
+---
+
 ## What's inside
 
 ```
@@ -148,10 +177,11 @@ tools/                   Audit and generator tooling, zero dependencies — see 
 ├── audit.sh             Quick one-page audit (+ test_audit.sh)
 ├── crawl.py             Full-site audit → audit.json
 ├── report.py            audit.json → self-contained HTML report
-└── generate.py          audit.json + site.json → deployable drafts + DEPLOY.md
+├── generate.py          audit.json + site.json → deployable drafts + DEPLOY.md
+└── verify.py            post-deploy verification · before/after diff → verify.json
 templates/               Report template (report.html), glossary.json,
                          site.example.json (the facts you fill in)
-tests/                   Unit tests for crawl.py, report.py, generate.py (no network)
+tests/                   Unit tests for crawl.py, report.py, generate.py, verify.py (no network)
 en/                      English mirror (same lanes/ + ops/ layout)
 ```
 

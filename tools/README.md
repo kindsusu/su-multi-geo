@@ -8,9 +8,16 @@
 | `crawl.py` | 사이트 전수 진단 | 도메인 | `out/<host>/audit.json` + 콘솔 |
 | `report.py` | 진단 결과 → 보고서 | `audit.json` | `report.html` |
 | `generate.py` | 진단 결과 → 배포 산출물 초안 | `audit.json` (+ `site.json`) | `out/<host>/deploy/` + `DEPLOY.md` |
+| `verify.py` | 배포가 실제로 서빙되는지 / 전후 비교 | `audit.json` (+ `deploy/`) | `verify.json` + `VERIFY.md` |
 | `test_audit.sh` | audit.sh 회귀 테스트 | — | PASS/FAIL |
 
-흐름은 `crawl.py` → `report.py`(사람에게 보고) → `generate.py`(고칠 파일 초안) 순이다.
+흐름:
+
+```
+crawl.py → report.py(사람에게 보고) → generate.py(고칠 파일 초안)
+        → [사람이 배포] → verify.py deploy(크롤러의 눈으로 증명)
+        → (14일) crawl.py 재크롤 → verify.py diff(무엇이 해소됐나)
+```
 
 ## audit.sh — 빠른 1페이지 진단
 
@@ -151,9 +158,76 @@ BreadcrumbList만은 크롤한 URL 경로와 페이지 title에서 **실측 기�
 **모르는 값은 빈 문자열로 두거나 키를 지운다.** 빈 값은 생략되거나 TODO로 남고,
 지어낸 값은 인용 신뢰를 죽인다.
 
+## verify.py — 배포 후 검증
+
+```bash
+python tools/verify.py deploy out/example.com/audit.json
+python tools/verify.py deploy out/example.com/audit.json --deploy out/example.com/deploy \
+                              --max-urls 1000 --delay 1.0 --out out/example.com/verify.json
+python tools/verify.py diff out/example.com/audit.json out/after/example.com/audit.json
+```
+
+**"고쳤다"를 증명하는 도구다.** 패키지에 파일이 있다는 것은 근거가 아니다 —
+라이브 사이트를 다시 받아 항목별로 ✅/❌를 낸다. `fail`이 하나라도 있으면 **exit code 1**
+(CI·스크립트 연계용).
+
+### `deploy` — 배포 패키지가 실제로 서빙되는가
+
+| 체크 id | 무엇을 본다 |
+|---|---|
+| `noindex` | **최우선.** 배포로 noindex가 새로 생기지 않았는가 (meta + `X-Robots-Tag`) |
+| `robots.status` | robots.txt 200 응답 |
+| `robots.preserved` | 배포 전 원문 줄이 **한 줄도 빠짐없이** 남아 있는가 |
+| `robots.policy` | 추가한 UA 블록이 실제로 서빙되는가 (UA 11종 실효 정책 재판정) |
+| `robots.sitemap` | `Sitemap:` 선언 존재 |
+| `sitemap.reachable` | 선언된 사이트맵 200 · XML 파싱 (인덱스면 하위까지) |
+| `sitemap.locs` | `<loc>` **전수** 200 (동일 호스트만, `--max-urls` 상한) |
+| `sitemap.noindex` | noindex 페이지가 사이트맵에 실렸는가 |
+| `sitemap.canonical` | 사이트맵 URL과 canonical이 일치하는가 |
+| `llms.status` / `llms.todo` | llms.txt 200 / `<<TODO` 잔존 → ❌ "미완성 배포" |
+| `jsonld.present` / `jsonld.type` | 대상 페이지에 LD가 들어갔는가 · @type이 맞는가 |
+| `jsonld.visible` | **LD 값이 가시 텍스트에 글자 그대로 있는가** — FAQ 문답, Organization name, Product name·가격. 없으면 ❌ "LD가 화면에 없는 말을 한다"(스팸 리스크) |
+| `jsonld.org_id` | Organization `@id`가 전 페이지에서 하나인가 |
+| `meta.applied` / `meta.duplicate` | meta 초안 반영 여부(바뀜/그대로) · 중복 title 잔존 |
+
+가시 텍스트 비교는 태그를 걷어내고 **공백만 정규화**한 뒤 부분 문자열로 본다
+(가격은 `89000` ↔ `89,000` 표기를 같게 본다).
+
+### `diff` — 전/후 진단 비교
+
+`after`는 사용자가 `crawl.py`를 다시 돌려 만든다. 네트워크를 쓰지 않는다.
+
+| 체크 id | 무엇을 본다 |
+|---|---|
+| `diff.resolved` | 사라진 findings (code 기준) |
+| `diff.new` | 새로 생긴 findings — critical이 섞이면 ❌ |
+| `diff.persisting` | 그대로 남은 findings + 영향 URL 수 증감 |
+| `diff.scorecard` | 레인별 전후 (`bad→warn` 등). 악화가 있으면 ❌ |
+| `diff.stats` | 중복 title·JSON-LD 페이지·noindex 수 전후 |
+| `diff.pages` | 사라진 URL(→404 확인 필요) · 새 URL |
+
+### 안전선
+
+- **대상 호스트 외에는 요청하지 않는다.** 리다이렉트 목적지가 밖으로 나가면 본문을 쓰지 않고
+  실패로 본다 (SSRF 방지 — `crawl.py`의 사이트맵 후보 필터와 같은 규칙)
+- 요청 간격 `--delay`(기본 0.5초)를 지킨다. 같은 URL은 한 번만 받는다
+- 파서·robots 정책 판정·URL 정규화·noindex 판정은 전부 `crawl.py` 함수를 **임포트해 쓴다**
+- 네트워크 함수는 주입 가능하다 (`verify_deploy(..., fetch=...)`) — 테스트는 가짜 응답으로 돈다
+
+### verify.json — 계약
+
+```json
+{"schema":"su-multi-geo/verify/1","mode":"deploy|diff","generated_at":"ISO8601",
+ "target":{"base":"https://host","host":"host","deploy":"out/host/deploy"},
+ "checks":[{"id":"sitemap.locs","status":"pass|fail|warn|skip","message":"...","evidence":{}}],
+ "summary":{"pass":0,"fail":0,"warn":0,"skip":0},"exit_code":0}
+```
+
+`VERIFY.md`는 같은 내용의 사람용 요약이다 — ❌를 먼저 싣고 항목마다 다음 조치를 한 줄 붙인다.
+
 ## 테스트
 
 ```bash
 bash tools/test_audit.sh          # audit.sh
-python -m unittest discover tests # crawl.py + report.py + generate.py (네트워크 없음)
+python -m unittest discover tests # crawl.py + report.py + generate.py + verify.py (네트워크 없음)
 ```

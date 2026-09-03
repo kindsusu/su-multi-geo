@@ -123,6 +123,31 @@ python tools/generate.py all out/example.com/audit.json --site out/example.com/s
 
 ---
 
+## 배포 다음 — "고쳤다"를 증명하기
+
+```bash
+python tools/verify.py deploy out/example.com/audit.json   # 배포 직후
+# → verify.json + VERIFY.md · fail이 있으면 exit code 1
+
+python tools/crawl.py example.com --out out/after          # 14일 후 재크롤
+python tools/verify.py diff out/example.com/audit.json out/after/example.com/audit.json
+```
+
+패키지에 파일이 있다는 것은 근거가 아니다. **라이브 사이트를 다시 받아** 항목별로 판정한다:
+
+- **noindex가 새로 생겼는지 최우선으로 본다** — 이게 실패면 나머지는 볼 것도 없다
+- robots.txt 원문이 한 줄도 빠지지 않았는지, 추가한 UA 블록이 정말 서빙되는지(정책 재판정)
+- 사이트맵 `<loc>` **전수** 200 · noindex 혼입 · canonical 불일치
+- llms.txt에 `<<TODO`가 남아 있으면 **미완성 배포**로 실패 처리
+- **JSON-LD가 화면에 없는 말을 하는지** — FAQ 문답·회사명·가격이 가시 텍스트에 글자 그대로
+  있는지 대조한다. 없으면 스팸 리스크로 ❌
+- `diff`는 findings 해소/신규/유지, 레인 점수 전후, 사라진 URL을 표로 낸다
+
+대상 호스트 외에는 절대 요청하지 않는다 (리다이렉트 목적지도 다시 검사).
+자세한 체크 목록은 [`tools/README.md`](tools/README.md).
+
+---
+
 ## 구성
 
 ```
@@ -142,10 +167,11 @@ tools/                   진단·생성 도구 (의존성 0) — tools/README.md
 ├── audit.sh             빠른 1페이지 진단 (+ test_audit.sh)
 ├── crawl.py             전수 진단 → audit.json
 ├── report.py            audit.json → 독립 HTML 보고서
-└── generate.py          audit.json + site.json → 배포 산출물 초안 + DEPLOY.md
+├── generate.py          audit.json + site.json → 배포 산출물 초안 + DEPLOY.md
+└── verify.py            배포 후 검증 · 전후 진단 비교 → verify.json + VERIFY.md
 templates/               보고서 템플릿 (report.html) · 용어 사전 (glossary.json)
                          · site.example.json (회사 사실 입력 양식)
-tests/                   crawl.py·report.py·generate.py 유닛 테스트 (네트워크 없음)
+tests/                   crawl.py·report.py·generate.py·verify.py 유닛 테스트 (네트워크 없음)
 en/                      영문 미러 (lanes/·ops/ 동일 구조)
 ```
 
