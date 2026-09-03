@@ -165,6 +165,37 @@ python tools/measure.py report out/<host>/audit.json  # → summary.json + MEASU
 - `MEASURE.md`가 재측정 예정일(마지막 측정 +14일)을 계산해 준다. **그 날짜를 보고에 옮겨 적는
   것까지가 완료 조건이다**
 
+### 루프는 명령 순서로 고정한다 — `tools/drift.py`
+
+기억에 맡기면 재측정은 오지 않는다. 스냅샷을 파일로 남기고 다음 날짜를 계산하게 한다.
+
+```bash
+# ① 손대기 전 — 기준선
+python tools/crawl.py <host> --out out
+python tools/drift.py snapshot out/<host>/audit.json --label "기준선"
+#   (측정 기준선까지 있으면) --measure out/<host>/measure/summary.json
+
+# ② 배포 직후
+python tools/verify.py deploy out/<host>/audit.json
+
+# ③ 14일 후 — 재크롤 + 재측정 → 스냅샷 → 비교
+python tools/crawl.py <host> --out out
+python tools/measure.py form out/<host>/audit.json --engines chatgpt,google_aio --runs 5
+#   ── 비로그인·시크릿 창으로 사람이 측정 ──
+python tools/measure.py import out/<host>/audit.json <채운 CSV>
+python tools/measure.py report out/<host>/audit.json
+python tools/drift.py snapshot out/<host>/audit.json \
+       --measure out/<host>/measure/summary.json --label "P1 배포 후"
+python tools/drift.py compare out/<host>/audit.json   # → drift.json + DRIFT.md
+```
+
+- **스냅샷은 불변이다.** 같은 날짜 같은 종류는 `--force` 없이 덮어쓰지 않는다 — 기준선 보호다
+- `compare`는 회귀(noindex 신규·JSON-LD 감소·중복 title 증가·사이트맵 URL 20% 이상 급감·
+  레인 점수 악화·비브랜드 인용률 하락)를 판정하고 **회귀가 있으면 exit code 1**을 낸다
+- 비교 대상 기준선이 30일보다 오래됐으면 ⚠️ 경고한다 (`ops/measure.md` 4번 — 낡은 데이터 함정)
+- `drift.py status`가 다음 재측정일까지 남은 일수를, `drift.py timeline`이 날짜별 추이 표를 낸다
+- **완료 조건은 `drift.json`의 `next_due`가 존재하는 것이다.** "고쳤다"로 끝나는 보고는 실패다
+
 ## 소스 접근 불가 모드
 
 사이트 코드·서버에 접근할 수 없으면(외주 제작, CMS 권한 없음 등) **구현 대신 산출물

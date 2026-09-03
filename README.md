@@ -189,6 +189,34 @@ question 5-10 times on the same day and record `N out of M`. This tool pins that
 
 ---
 
+## Drift — put "re-measure what, and when" in a file, not in your memory
+
+```bash
+python tools/drift.py snapshot out/example.com/audit.json --label "baseline"   # before you touch anything
+# ── deploy → 14 days → re-crawl + re-measure ──
+python tools/drift.py snapshot out/example.com/audit.json \
+       --measure out/example.com/measure/summary.json --label "after P1"
+python tools/drift.py compare  out/example.com/audit.json   # → drift.json + DRIFT.md
+python tools/drift.py status   out/example.com/audit.json   # days left until the next re-measure
+python tools/drift.py timeline out/example.com/audit.json   # → TIMELINE.md
+```
+
+A re-measure left to memory never happens. **Snapshots pile up immutably in
+`out/<host>/history/`**, and the same date and kind is refused without `--force` — a baseline
+that quietly changes turns the whole trend into a lie.
+
+- `compare` judges regressions: **new noindex · fewer JSON-LD pages · more duplicate titles ·
+  sitemap URLs down more than 20% · a lane score getting worse · non-brand citation rate falling.**
+  Any one of them **exits 1** — wire it into CI
+- The audit side reuses `verify.py diff`; the measurement side reads `measure.py`'s
+  `summary.json`. It also lists **our URLs that started getting cited and the ones that stopped**
+- If the baseline is older than 30 days it stamps ⚠️ **"the baseline is stale"** at the top —
+  a lower bound cannot detect staleness
+- The last section of `DRIFT.md` is **the next re-measure date and the commands to run that day**.
+  **Done is not "we fixed it" — done is `next_due` existing in `drift.json`**
+
+---
+
 ## What's inside
 
 ```
@@ -210,11 +238,12 @@ tools/                   Audit and generator tooling, zero dependencies — see 
 ├── report.py            audit.json → self-contained HTML report
 ├── generate.py          audit.json + site.json → deployable drafts + DEPLOY.md
 ├── verify.py            post-deploy verification · before/after diff → verify.json
-└── measure.py           AI citation measurement (manual form first, automation optional)
+├── measure.py           AI citation measurement (manual form first, automation optional)
+└── drift.py             baseline snapshots · regression gate · re-measure schedule → drift.json
 templates/               Report template (report.html), glossary.json,
                          site.example.json (the facts you fill in),
                          queries.example.json (the measurement query set)
-tests/                   Unit tests for crawl, report, generate, verify, measure (no network)
+tests/                   Unit tests for crawl, report, generate, verify, measure, drift (no network)
 en/                      English mirror (same lanes/ + ops/ layout)
 ```
 

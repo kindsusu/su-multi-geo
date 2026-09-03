@@ -128,6 +128,23 @@ python tools/measure.py report out/<host>/audit.json   # → summary.json + MEAS
 - LLMO는 학습 주기 단위라 **분기 1회**로 따로 잰다 (`llmo.md`)
 - 재측정을 기억에 맡기지 마라. **보고에 재측정 날짜를 명시하는 것이 완료 조건이다**
 
+### 도구 — `tools/drift.py`가 그 날짜를 파일로 들고 있는다
+
+```bash
+python tools/drift.py snapshot out/<host>/audit.json --label "기준선"
+#   → out/<host>/history/audit-<날짜>.json + index.json (sha256·baseline_date·next_due)
+python tools/drift.py snapshot out/<host>/audit.json --measure out/<host>/measure/summary.json
+python tools/drift.py compare  out/<host>/audit.json   # 기준선 vs 최신 → drift.json + DRIFT.md
+python tools/drift.py status   out/<host>/audit.json   # 다음 재측정일까지 며칠 남았나
+python tools/drift.py timeline out/<host>/audit.json   # 날짜별 추이 표 → TIMELINE.md
+```
+
+- **스냅샷은 불변이다.** 같은 날짜 같은 종류를 다시 저장하면 `--force` 없이는 거부한다 —
+  기준선을 나중에 조용히 덮어쓰면 추이 전체가 거짓말이 된다
+- `next_due`는 **마지막 스냅샷 + 14일**로 자동 계산된다. `DRIFT.md` 마지막 절이 그날 돌릴
+  명령을 순서대로 적어 둔다 (crawl → snapshot → form → import → report → snapshot → compare)
+- `compare`는 회귀를 판정하고 **회귀가 있으면 exit code 1**을 낸다 — CI에 걸 수 있다
+
 ## 4. 낡은 데이터 함정
 
 > **낡음은 하한선 검사로 절대 잡히지 않는다.**
@@ -135,6 +152,11 @@ python tools/measure.py report out/<host>/audit.json   # → summary.json + MEAS
 "0이 아님"만 확인하는 감시는 며칠 전 값이 계속 내려와도 통과시킨다.
 그래서 파이프라인이 감시해야 할 대상은 값 자체가 아니라 **그 값이 찍힌 시각**이다.
 "마지막 갱신이 N일을 넘기면 그 지표는 아예 표시하지 않는다"를 기본 동작으로 두면 안전하다.
+
+`drift.py compare`가 이 검사를 대신한다. 비교 대상 기준선이 `--stale-days`(기본 30)보다
+오래됐으면 ⚠️ **"기준선이 낡았다"**를 `drift.json`의 `warnings`와 `DRIFT.md` 머리에 박는다.
+그 사이 사이트도 엔진도 여러 번 바뀌었으므로, 그 비교는 *무엇이 바뀌었나*는 말해도
+*무엇 때문인가*는 말하지 못한다 — 최근 스냅샷을 하나 더 찍고 다시 비교하라.
 
 ## 5. 읽는 법
 

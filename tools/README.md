@@ -331,9 +331,92 @@ Gemini·Perplexity·Google AI Overviews·네이버·다음·Copilot은 자동화
   출력하고, `--yes`가 없으면 확인을 받는다. 회차 사이에 `--delay`(기본 2초)를 지킨다
 - 실패한 회차는 버리지 않고 `note`에 사유를 적어 기록한다 — 표본에서 빠지면 분포가 왜곡된다
 
+## drift.py — 기준선 스냅샷 + 드리프트 비교
+
+```bash
+python tools/drift.py snapshot out/example.com/audit.json --label "기준선"
+python tools/drift.py snapshot out/example.com/audit.json \
+       --measure out/example.com/measure/summary.json --date 2026-09-15 --label "P1 배포 후"
+python tools/drift.py compare  out/example.com/audit.json [--from 2026-09-01] [--to 2026-09-15]
+python tools/drift.py status   out/example.com/audit.json
+python tools/drift.py timeline out/example.com/audit.json
+# audit.json 경로 대신 --host example.com [--out out] 도 된다 (compare·status·timeline)
+```
+
+**"언제 무엇을 다시 잰다"를 기억이 아니라 파일로 강제하는 도구다.** 네트워크를 쓰지 않는다 —
+이미 만들어 둔 `audit.json`·`summary.json`·`verify.json`만 읽는다.
+
+### `snapshot` — 불변 보관소
+
+`out/<host>/history/`에 사본을 그대로 복사하고 sha256을 남긴다.
+
+| 파일 | 내용 |
+|---|---|
+| `audit-<YYYY-MM-DD>.json` | `crawl.py` 결과 사본 (필수) |
+| `measure-<YYYY-MM-DD>.json` | `measure.py report`의 `summary.json` 사본 (`--measure`) |
+| `verify-<YYYY-MM-DD>.json` | `verify.py`의 `verify.json` 사본 (`--verify`) |
+| `index.json` | 스키마 `su-multi-geo/history/1` — 스냅샷 목록·`baseline_date`·`next_due` |
+
+- **같은 날짜 같은 종류는 `--force` 없이 거부한다.** 기준선을 조용히 덮어쓰면 추이가 거짓말이 된다
+- 첫 audit 스냅샷이 자동으로 기준선이 된다. 나중에 옮기려면 `--baseline`
+- `next_due` = **마지막 스냅샷 + 14일** (`ops/measure.md` 3번)
+- 하나라도 충돌하면 **아무것도 쓰지 않는다** — 반쯤 갱신된 이력이 제일 나쁘다
+
+### `compare` — 기준선 vs 최신
+
+기본은 `baseline_date` → 최신 audit 스냅샷. `--from`/`--to`로 임의의 두 날짜를 고른다.
+
+- **진단 드리프트**는 `verify.py`의 `verify_diff`를 그대로 임포트해 쓴다(복제 없음) —
+  findings 해소/신규/유지, 레인 점수 전후, stats 전후, 사라진 URL
+- **측정 드리프트**는 두 `summary.json`을 비교한다 — 엔진 × (브랜드/비브랜드) 인용률
+  전후(N/M · 증감 포인트), 우리 URL 인용 빈도 전후, **새로 인용되기 시작한 / 인용이 끊긴
+  우리 URL**, 경쟁 도메인 전후. 측정 스냅샷이 2개 미만이면 이 절은 건너뛰고 경고만 남긴다
+
+#### 회귀 판정 — 하나라도 걸리면 exit code 1
+
+| 규칙 | 판정 근거 | 결과 |
+|---|---|---|
+| noindex 신규 발생 | `stats.pages_noindex` 증가 | ❌ 회귀 |
+| JSON-LD 페이지 감소 | `stats.pages_with_jsonld` 감소 | ❌ 회귀 |
+| 중복 title 증가 | `TITLE_DUPLICATE` finding의 `data.pages` 증가 | ❌ 회귀 |
+| 사이트맵 URL 급감 | 비인덱스 사이트맵 `url_count` 합이 **20% 넘게** 감소 | ❌ 회귀 |
+| 레인 점수 악화 | `verify_diff`의 `diff.scorecard` = fail | ❌ 회귀 |
+| 비브랜드 인용률 하락 | 엔진 합산 `nonbrand` 인용률 하락 | ❌ 회귀 |
+
+같은 지표가 **좋아지면 개선**(pass), **그대로면 변화 없음**(info)이다.
+페이지 수 변동과 20% 미만의 사이트맵 감소는 회귀로 치지 않는다 — 사실만 남긴다.
+브랜드 인용률 하락도 회귀가 아니다(질의 세트·엔진 편차에 더 흔들린다) — 표에는 그대로 실린다.
+
+#### 낡은 기준선 경고
+
+비교 대상 기준선이 `--stale-days`(기본 30)보다 오래되면 ⚠️ **"기준선이 낡았다"**를
+`warnings`와 `DRIFT.md` 머리에 박는다 (`ops/measure.md` 4번 — 낡음은 하한선 검사로 안 잡힌다).
+
+### drift.json — 계약
+
+```json
+{"schema":"su-multi-geo/drift/1","from":"2026-09-01","to":"2026-09-15",
+ "baseline":"2026-09-01","baseline_age_days":14,"warnings":["..."],
+ "metrics":{"before":{},"after":{}},
+ "audit_diff":{"resolved":[],"new":[],"persisting":[],"scorecard":{},"stats":{},"pages":{}},
+ "measure_diff":{"totals":{},"engines":[],"ours":[],"ours_new":[],"ours_lost":[],"competitors":[]},
+ "regressions":[],"improvements":[],"unchanged":[],
+ "next_due":"2026-09-29","exit_code":1}
+```
+
+`DRIFT.md`는 사람용 요약이다 — **❌ 회귀 → ✅ 개선 → 변화 없음 → 다음 재측정일과 그날 돌릴
+명령 순서**로 싣는다. **완료 조건은 `next_due`가 존재하는 것이다.**
+
+### `status` / `timeline`
+
+- `status` — 기준선 날짜, 스냅샷 수, 마지막 측정일, `next_due`까지 남은 일수
+  (지났으면 ⚠️ 며칠 초과), 스냅샷 한 줄씩
+- `timeline` — 날짜별 페이지 수·중복 title·JSON-LD 페이지·noindex·비브랜드/브랜드 인용률을
+  `TIMELINE.md` 표로. 빈칸(`—`)은 그날 그 종류를 안 찍었다는 뜻이고 0이 아니다
+
 ## 테스트
 
 ```bash
 bash tools/test_audit.sh          # audit.sh
-python -m unittest discover tests # crawl·report·generate·verify·measure (네트워크 없음)
+python -m unittest discover tests # crawl·report·generate·verify·measure·drift (네트워크 없음)
 ```

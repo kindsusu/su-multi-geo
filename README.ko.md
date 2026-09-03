@@ -175,6 +175,34 @@ python tools/measure.py report out/example.com/audit.json  # → summary.json + 
 
 ---
 
+## 드리프트 — "언제 무엇을 다시 잰다"를 파일로 강제한다
+
+```bash
+python tools/drift.py snapshot out/example.com/audit.json --label "기준선"   # 손대기 전
+# ── 배포 → 14일 → 재크롤 + 재측정 ──
+python tools/drift.py snapshot out/example.com/audit.json \
+       --measure out/example.com/measure/summary.json --label "P1 배포 후"
+python tools/drift.py compare  out/example.com/audit.json   # → drift.json + DRIFT.md
+python tools/drift.py status   out/example.com/audit.json   # 재측정까지 며칠 남았나
+python tools/drift.py timeline out/example.com/audit.json   # → TIMELINE.md
+```
+
+재측정을 기억에 맡기면 오지 않는다. **스냅샷은 `out/<host>/history/`에 불변으로 쌓이고**,
+같은 날짜 같은 종류는 `--force` 없이 덮어쓰지 않는다 — 기준선이 조용히 바뀌면 추이 전체가
+거짓말이 된다.
+
+- `compare`는 회귀를 판정한다: **noindex 신규 발생 · JSON-LD 페이지 감소 · 중복 title 증가 ·
+  사이트맵 URL 20% 이상 급감 · 레인 점수 악화 · 비브랜드 인용률 하락.**
+  하나라도 걸리면 **exit code 1** (CI에 걸 수 있다)
+- 진단 비교는 `verify.py diff`를, 측정 비교는 `measure.py`의 `summary.json`을 그대로 쓴다.
+  **새로 인용되기 시작한 우리 URL / 인용이 끊긴 URL**까지 표로 낸다
+- 기준선이 30일보다 오래됐으면 ⚠️ **"기준선이 낡았다"**를 먼저 박는다 — 낡음은 하한선 검사로
+  절대 잡히지 않는다
+- `DRIFT.md` 마지막 절이 **다음 재측정일과 그날 돌릴 명령 순서**다.
+  **완료 조건은 "고쳤다"가 아니라 `drift.json`에 `next_due`가 있는 것이다**
+
+---
+
 ## 구성
 
 ```
@@ -196,11 +224,12 @@ tools/                   진단·생성 도구 (의존성 0) — tools/README.md
 ├── report.py            audit.json → 독립 HTML 보고서
 ├── generate.py          audit.json + site.json → 배포 산출물 초안 + DEPLOY.md
 ├── verify.py            배포 후 검증 · 전후 진단 비교 → verify.json + VERIFY.md
-└── measure.py           AI 인용 측정 (수동 폼 기본 · 자동은 선택) → log.jsonl + MEASURE.md
+├── measure.py           AI 인용 측정 (수동 폼 기본 · 자동은 선택) → log.jsonl + MEASURE.md
+└── drift.py             기준선 스냅샷 · 회귀 판정 · 재측정 일정 → drift.json + DRIFT.md
 templates/               보고서 템플릿 (report.html) · 용어 사전 (glossary.json)
                          · site.example.json (회사 사실 입력 양식)
                          · queries.example.json (측정 질의 세트 양식)
-tests/                   crawl·report·generate·verify·measure 유닛 테스트 (네트워크 없음)
+tests/                   crawl·report·generate·verify·measure·drift 유닛 테스트 (네트워크 없음)
 en/                      영문 미러 (lanes/·ops/ 동일 구조)
 ```
 

@@ -138,6 +138,23 @@ python tools/measure.py report out/<host>/audit.json   # → summary.json + MEAS
 - Do not leave re-measurement to memory. **Naming the re-measure date in the report is the
   completion condition.**
 
+### The tool — `tools/drift.py` holds that date in a file
+
+```bash
+python tools/drift.py snapshot out/<host>/audit.json --label "baseline"
+#   → out/<host>/history/audit-<date>.json + index.json (sha256, baseline_date, next_due)
+python tools/drift.py snapshot out/<host>/audit.json --measure out/<host>/measure/summary.json
+python tools/drift.py compare  out/<host>/audit.json   # baseline vs latest → drift.json + DRIFT.md
+python tools/drift.py status   out/<host>/audit.json   # days left until the next re-measure
+python tools/drift.py timeline out/<host>/audit.json   # per-date trend table → TIMELINE.md
+```
+
+- **Snapshots are immutable.** Storing the same date and kind again is refused without `--force` —
+  quietly overwriting a baseline later turns the whole trend into a lie
+- `next_due` is computed as **last snapshot + 14 days**. The last section of `DRIFT.md` lists the
+  commands to run that day, in order (crawl → snapshot → form → import → report → snapshot → compare)
+- `compare` judges regressions and **exits 1 when it finds one** — wire it into CI
+
 ## 4. The stale-data trap
 
 > **A lower bound cannot detect staleness.**
@@ -145,6 +162,12 @@ python tools/measure.py report out/<host>/audit.json   # → summary.json + MEAS
 A monitor that only checks "not zero" will happily pass a value that has been frozen for days.
 So what the pipeline must watch is not the value but **the timestamp on it**.
 "If the last update is older than N days, do not display this metric at all" is the safe default.
+
+`drift.py compare` runs that check for you. When the baseline being compared against is older
+than `--stale-days` (default 30), it stamps ⚠️ **"the baseline is stale"** into `warnings` in
+`drift.json` and at the head of `DRIFT.md`. Both the site and the engines changed several times
+in between, so that comparison can tell you *what* changed but not *why* — take one more recent
+snapshot and compare again.
 
 ## 5. How to read the numbers
 
