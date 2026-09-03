@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.12", "3.13"]
+
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+
+    steps:
+      # 의존성 설치 단계가 없다는 것이 이 CI의 주장이다 — 표준 라이브러리만 쓴다.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Syntax check
+        run: python -m py_compile tools/crawl.py tools/report.py tools/generate.py tools/verify.py tools/measure.py tools/drift.py
+
+      - name: Unit + E2E tests
+        run: python -m unittest discover tests -v
+
+      - name: audit.sh regression
+        shell: bash
+        run: bash tools/test_audit.sh

@@ -30,6 +30,28 @@ extracted as the answer to none of them. URL, h1, and title reflect the question
       trust assessment
 - [ ] **Use tables**: engines parse tables as structured facts reliably
 
+### Paragraph length — Korean needs its own ruler
+
+Korean takes roughly twice the width of English in a search result. Paragraphs need separate
+targets the same way titles and descriptions do. The numbers below are a **practical working
+range**, not a threshold any engine has published — do not cite them as measured limits. Being
+outside the range is not a disqualification, but it should have a reason.
+
+| What | Korean | English | Why |
+|---|---|---|---|
+| Direct-answer sentence | 1–2 sentences · **40–80 chars** | 1–2 sentences · 15–30 words | Short enough to be lifted whole into the answer box |
+| Supporting paragraph | **150–300 chars** | 60–120 words | One paragraph = one claim + one piece of evidence. Longer usually means two claims |
+| Tables | not counted as paragraphs | same | Parsed row by row — length targets do not apply |
+
+- [ ] **One claim, one piece of evidence per paragraph.** Past ~300 Korean characters there are
+      usually two claims in there — split it
+- [ ] **Subject, figure and as-of date in the paragraph's first sentence.** The fact must hold
+      whether the whole paragraph or only its first sentence gets extracted
+- [ ] **A direct answer over 80 Korean characters is not a direct answer** — it means background
+      was laid before the answer. Move the background below
+- [ ] Do not write out in prose what a list or table can carry — it only adds length and makes
+      extraction harder
+
 ### Writing so the extracted sentence cannot mislead — four checks
 
 If one sentence getting lifted is the premise, then **that sentence must not be wrong on its

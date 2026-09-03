@@ -1,0 +1,13 @@
+{
+  "schema": "su-multi-geo/queries/1",
+  "_readme": [
+    "tests/test_e2e.py가 out/<host>/measure/queries.json 자리에 넣는 픽스처다.",
+    "templates/queries.example.json과 달리 <<TODO>>가 없다 — 사람이 다 채운 뒤의 상태를 흉내낸다."
+  ],
+  "queries": [
+    {"id": "Q01", "text": "예시 렌탈 주식회사 요금은 얼마인가요?", "type": "brand", "note": ""},
+    {"id": "Q02", "text": "예시 렌탈 주식회사는 어떤 회사인가요?", "type": "brand", "note": ""},
+    {"id": "Q03", "text": "업무용 차량 장기 렌탈 요금 비교", "type": "nonbrand", "note": ""},
+    {"id": "Q04", "text": "렌탈 계약 중도 해지 위약금은 어떻게 계산하나요?", "type": "nonbrand", "note": ""}
+  ]
+}

@@ -431,7 +431,8 @@ def section_shape(report, lab, ann, lang):
         ("Home redirect hops" if lang == "en" else "홈 리다이렉트 홉", hygiene["redirect_hops"]),
         ("Home response" if lang == "en" else "홈 응답 시간", "%s ms" % hygiene["home_response_ms"]),
         ("Host variant" if lang == "en" else "도메인 변형",
-         "%s → %s" % (hygiene["alt_host"]["host"], hygiene["alt_host"]["result"])),
+         hygiene["alt_host"]["result"] if hygiene["alt_host"]["result"] == "na"
+         else "%s → %s" % (hygiene["alt_host"]["host"], hygiene["alt_host"]["result"])),
     ]
     stat_rows = [[td(ann(str(k))), td(escape(str(v)), "num")] for k, v in pairs]
     out = table([lab["th"]["item"], lab["th"]["value"]], stat_rows)

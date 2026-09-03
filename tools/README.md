@@ -2,6 +2,24 @@
 
 전부 의존성 0이다. `audit.sh`는 bash + curl, 나머지는 파이썬 3.10+ 표준 라이브러리만 쓴다.
 
+```
+crawl → report → generate → [사람이 배포] → verify → (14일) crawl·measure → drift → next_due
+```
+
+### 스키마 버전 — 도구 사이의 계약
+
+| 파일 | 스키마 | 만드는 도구 | 읽는 도구 |
+|---|---|---|---|
+| `audit.json` | `su-multi-geo/audit/1` | `crawl.py` | `report` `generate` `verify` `measure` `drift` |
+| `verify.json` | `su-multi-geo/verify/1` | `verify.py` | `drift`(스냅샷) |
+| `measure/queries.json` | `su-multi-geo/queries/1` | 사람(`measure.py init`이 초안) | `measure` |
+| `measure/log.jsonl` | `su-multi-geo/measure-row/1` | `measure.py import`·`auto` | `measure report` |
+| `measure/summary.json` | `su-multi-geo/measure/1` | `measure.py report` | `drift` |
+| `history/index.json` | `su-multi-geo/history/1` | `drift.py snapshot` | `drift` |
+| `drift.json` | `su-multi-geo/drift/1` | `drift.py compare` | 사람 |
+
+필드를 바꾸면 스키마 버전을 올린다. 버전이 다른 파일은 도구가 거부한다.
+
 | 도구 | 무엇 | 입력 | 출력 |
 |---|---|---|---|
 | `audit.sh` | 홈 1페이지 빠른 진단 | 도메인 | 콘솔 |
@@ -55,7 +73,8 @@ User-Agent는 `su-multi-geo-audit/2.0`으로 밝히고 다닌다.
 OG 태그·네이버 소유확인·`lang`·응답 시간.
 
 사이트 수준으로 재는 것: robots.txt 원문과 UA 11종의 실효 정책, 사이트맵(선언·존재·URL 수·
-크롤 결과와의 차집합), `llms.txt`, 404 프로브, 리다이렉트 홉, www↔apex 변형 접속.
+크롤 결과와의 차집합), `llms.txt`, 404 프로브, 리다이렉트 홉, www↔apex 변형 접속
+(대상이 IP·localhost면 변형이 없으므로 `na`로 남기고 조회하지 않는다).
 
 중간에 실패하거나 Ctrl+C로 끊어도 **거기까지의 결과를 저장한다.**
 
@@ -71,7 +90,7 @@ OG 태그·네이버 소유확인·`lang`·응답 시간.
          "sitemap_vs_crawl":{"only_in_sitemap":[],"only_in_crawl":[]},
          "llms":{"llms.txt":404,"llms-full.txt":404},
          "hygiene":{"probe_404":404,"redirect_hops":0,"home_response_ms":0,
-                    "alt_host":{"host":"www.x","result":"ok|redirect|tls_fail|dns_fail|error",
+                    "alt_host":{"host":"www.x","result":"ok|redirect|tls_fail|dns_fail|error|na",
                                 "status":null,"location":null}}},
  "pages":[{"url":"...","status":200,"final_url":"...","title":null,"meta_description":null,
            "meta_robots":null,"x_robots_tag":null,"canonical":null,"h1":[],
@@ -417,6 +436,13 @@ python tools/drift.py timeline out/example.com/audit.json
 ## 테스트
 
 ```bash
-bash tools/test_audit.sh          # audit.sh
-python -m unittest discover tests # crawl·report·generate·verify·measure·drift (네트워크 없음)
+bash tools/test_audit.sh           # audit.sh
+python -m unittest discover tests  # 217개 — 단위 + E2E (외부 네트워크 없음)
+python -m unittest tests.test_e2e  # E2E만
 ```
+
+`tests/test_e2e.py`는 `tests/fixtures/site/`(결함을 일부러 심은 8페이지)를 `http.server`로
+127.0.0.1 임시 포트에 띄우고 **전 루프를 실제 CLI로** 돌린다 —
+crawl → report → generate → 배포 흉내 → verify → 재크롤 → measure → drift.
+`.github/workflows/ci.yml`이 ubuntu·windows·macos × Python 3.10·3.12·3.13에서 같은 것을 돌린다.
+**의존성 설치 단계가 없다는 것이 "표준 라이브러리만"의 증명이다.**

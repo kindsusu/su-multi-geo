@@ -243,7 +243,8 @@ tools/                   Audit and generator tooling, zero dependencies — see 
 templates/               Report template (report.html), glossary.json,
                          site.example.json (the facts you fill in),
                          queries.example.json (the measurement query set)
-tests/                   Unit tests for crawl, report, generate, verify, measure, drift (no network)
+tests/                   217 tests — units per tool + test_e2e.py, the whole loop over a local
+                         fixture site (tests/fixtures/site/). No network. `python -m unittest discover tests`
 en/                      English mirror (same lanes/ + ops/ layout)
 ```
 

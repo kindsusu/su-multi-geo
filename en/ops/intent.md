@@ -54,6 +54,9 @@ always the stronger evidence.
 
 ### Format — one well-structured guide beats a page count
 
+- [ ] **Paragraph length follows "Paragraph length — Korean needs its own ruler" in
+      `lanes/aeo.md`** — direct answer 40–80 Korean characters, supporting paragraph
+      150–300, tables not counted as paragraphs (a practical working range)
 - [ ] **Concentrate effort on a single comparison or roundup guide.** A well-built single
       page carrying a substantial share of a domain's total citations — and covering hundreds
       of keywords on its own — is a repeatedly observed pattern. One page carrying all the

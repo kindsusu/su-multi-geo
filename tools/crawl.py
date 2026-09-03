@@ -381,6 +381,21 @@ def host_of(url: str) -> str:
     return urllib.parse.urlsplit(url).netloc.lower()
 
 
+def safe_host(host: str) -> str:
+    """호스트를 폴더 이름으로 — Windows는 ':'를 파일명에 못 쓴다 (127.0.0.1:8000 같은 대상)."""
+    return re.sub(r'[:*?"<>|\\/]', "_", host) or "site"
+
+
+def alt_host_of(host: str):
+    """www↔apex 변형 주소. IP·localhost에는 변형이 없다 → None (엉뚱한 DNS 조회를 막는다)."""
+    if host.startswith("www."):
+        return host[4:]
+    bare = host.split(":")[0]
+    if bare in ("localhost", "") or re.fullmatch(r"[\d.]+|\[[0-9a-f:]+\]", bare):
+        return None
+    return "www.%s" % host
+
+
 def script_of(text: str) -> str:
     """길이 기준을 정할 문자 종류: 한글 비중이 높으면 ko."""
     if not text:
@@ -484,14 +499,18 @@ def probe_site(base: str, robots_raw: str, robots_status, crawled: list) -> dict
 
     home = fetch(base)
     probe = fetch("%s/__multi_geo_404_probe__" % base)
-    alt_host = ("%s" % host[4:]) if host.startswith("www.") else ("www.%s" % host)
-    alt = fetch("https://%s/" % alt_host)
-    if alt["error"]:
-        alt_result = alt["error"] if alt["error"] in ("tls_fail", "dns_fail") else "error"
-    elif alt["redirects"]:
-        alt_result = "redirect"
+    alt_host = alt_host_of(host)
+    if alt_host is None:
+        alt = {"error": None, "status": None, "final_url": None, "redirects": 0}
+        alt_result = "na"
     else:
-        alt_result = "ok"
+        alt = fetch("https://%s/" % alt_host)
+        if alt["error"]:
+            alt_result = alt["error"] if alt["error"] in ("tls_fail", "dns_fail") else "error"
+        elif alt["redirects"]:
+            alt_result = "redirect"
+        else:
+            alt_result = "ok"
 
     return {
         "robots": {
@@ -911,8 +930,9 @@ def print_summary(report: dict) -> None:
     print("   404 동작        : HTTP %s  (404여야 정상)" % hygiene["probe_404"])
     print("   리다이렉트 홉   : %s" % hygiene["redirect_hops"])
     print("   홈 응답 시간    : %sms" % hygiene["home_response_ms"])
-    print("   도메인 변형     : https://%s → %s"
-          % (hygiene["alt_host"]["host"], hygiene["alt_host"]["result"]))
+    alt = hygiene["alt_host"]
+    print("   도메인 변형     : %s" % ("해당 없음 (IP·localhost 대상)" if alt["result"] == "na"
+                                       else "https://%s → %s" % (alt["host"], alt["result"])))
 
     print("")
     print("── 5. 레인 점수표 ──")
@@ -1006,7 +1026,7 @@ def main(argv=None) -> int:
         return 1
 
     host = report["target"]["host"] or "site"
-    outdir = os.path.join(args.out, host)
+    outdir = os.path.join(args.out, safe_host(host))
     os.makedirs(outdir, exist_ok=True)
     path = os.path.join(outdir, "audit.json")
     with open(path, "w", encoding="utf-8", newline="\n") as fh:

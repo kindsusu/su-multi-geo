@@ -1,0 +1,33 @@
+{
+  "_readme": [
+    "tests/test_e2e.py가 __BASE__를 임시 서버 주소(http://127.0.0.1:<포트>)로 바꿔",
+    "out/<host>/site.json으로 쓴다. 실재하는 회사가 아니라 픽스처 값이다.",
+    "faqs의 q·a는 tests/fixtures/site/faq.html의 가시 텍스트와 글자가 같아야 한다 —",
+    "verify.py의 jsonld.visible 검사가 그 일치를 본다."
+  ],
+  "name": "예시 렌탈 주식회사",
+  "legal_name": "예시 렌탈 주식회사",
+  "description": "예시 렌탈 주식회사는 중소 사업자가 업무용 차량을 필요한 기간만큼만 쓰도록 공개된 요금표와 계약 조건으로 돕는다.",
+  "contact": {
+    "phone": "02-000-0000",
+    "email": "hello@example.com"
+  },
+  "address": {
+    "locality": "서울",
+    "country": "KR"
+  },
+  "founding_year": 2015,
+  "same_as": [],
+  "faqs": [
+    {
+      "q": "예약은 며칠 전까지 해야 하나요?",
+      "a": "예약은 이용 시작일 기준 최소 3일 전까지 접수해야 하며, 성수기에는 7일 전까지 접수한다 (2026-01 기준).",
+      "page_url": "__BASE__/faq.html"
+    },
+    {
+      "q": "계약 기간 중간에 해지할 수 있나요?",
+      "a": "계약 해지는 남은 기간 요금의 30퍼센트를 위약금으로 정산한 뒤 가능하며, 차량 반납 검수가 끝나야 정산이 확정된다 (2026-01 기준).",
+      "page_url": "__BASE__/faq.html"
+    }
+  ]
+}

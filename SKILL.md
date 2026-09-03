@@ -229,3 +229,22 @@ python tools/generate.py all out/<host>/audit.json --site out/<host>/site.json
 미배포면 "배포 후 재검증 예정"으로 남긴다
 ③ 다음 측정 일정 ④ 하지 않은 것과 이유 (예: 백링크 요청 거절)
 
+## 도구 요약 — 어느 Phase에서 무엇을 돌리나
+
+여섯 개다. 전부 의존성 0(파이썬 3.10+ 표준 라이브러리)이고, 사용법과 스키마는
+`tools/README.md`에 있다.
+
+| 도구 | Phase | 무엇을 하나 | 완료의 증거 |
+|---|---|---|---|
+| `crawl.py` | **0** 진단 | 사이트 전수 크롤 → 측정값·findings·레인 점수 | `out/<host>/audit.json` |
+| `report.py` | **0** 진단 | `audit.json` → 자립형 HTML 보고서 8페이지 | `report.html` |
+| `generate.py` | **1** 크롤러 정책 · **3** SEO 기반 · **5** AEO/GEO/LLMO | robots·sitemap·llms.txt·JSON-LD·meta 초안 | `deploy/` + `DEPLOY.md` |
+| `verify.py` | **8** 측정 루프 — 배포 직후 | 라이브를 다시 받아 항목별 ✅/❌ (`deploy`), 전후 진단 비교 (`diff`) | `verify.json` + `VERIFY.md` · fail 있으면 exit 1 |
+| `measure.py` | **8** 측정 루프 | AI 인용을 사람이 재는 루프 (`init`→`form`→`import`→`report`) | `summary.json` + `MEASURE.md` |
+| `drift.py` | **8** 측정 루프 | 불변 스냅샷 · 회귀 판정 · 다음 재측정일 계산 | `drift.json`의 `next_due` · 회귀 있으면 exit 1 |
+
+- Phase 2(메시지)·4(의도 랜딩)·6(평판)·7(NEO)에는 도구가 없다 — **사람이 결정할 것들이다.**
+  도구는 그 결정을 잰 값으로 뒷받침할 뿐이다
+- `audit.sh`는 도구 여섯에 들지 않는다. "일단 상태부터 보자"용 30초 진단이고,
+  보고할 것이면 `crawl.py`를 돌린다
+

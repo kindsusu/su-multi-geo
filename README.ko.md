@@ -229,7 +229,8 @@ tools/                   진단·생성 도구 (의존성 0) — tools/README.md
 templates/               보고서 템플릿 (report.html) · 용어 사전 (glossary.json)
                          · site.example.json (회사 사실 입력 양식)
                          · queries.example.json (측정 질의 세트 양식)
-tests/                   crawl·report·generate·verify·measure·drift 유닛 테스트 (네트워크 없음)
+tests/                   테스트 217개 — 도구별 유닛 + test_e2e.py(로컬 픽스처 사이트로 전 루프,
+                         tests/fixtures/site/). 네트워크 없음. `python -m unittest discover tests`
 en/                      영문 미러 (lanes/·ops/ 동일 구조)
 ```
 
