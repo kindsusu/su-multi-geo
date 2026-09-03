@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 626" width="900" height="626" role="img" aria-label="Tool pipeline. 1 Audit: crawl.py to audit.json to report.py to report.html. Human gate: you approve the priority order. 2 Build: generate.py to deploy slash plus DEPLOY.md, drafts only. Human gate: a human reviews and a human deploys. 3 Prove: verify.py deploy to verify.json, exit code 1 on failure. Then 14 days. 4 Re-measure: re-crawl, verify.py diff, and measure.py with a human running the queries. 5 Loop: drift.py compare to drift.json and next_due, repeating every 14 days.">
+  <style>
+    .bg   { fill: #10201C }
+    .pan  { fill: #1A2B28; stroke: #2E4A44; stroke-width: 1 }
+    .gate { fill: #1A2B28; stroke: #A96A00; stroke-width: 1.4; stroke-dasharray: 7 5 }
+    text  { font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif }
+    .l1   { font-size: 13.5px; fill: #C9DCD6 }
+    .l2   { font-size: 12.5px; fill: #9DB5AE }
+    .note { font-size: 11.5px; fill: #7E9992 }
+    .st   { font-size: 13px; font-weight: 700; fill: #E9F2EF; letter-spacing: .06em }
+    .tool { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; fill: #58BBA6 }
+    .file { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; fill: #C9DCD6 }
+    .ar   { fill: #4E6F68 }
+    .num  { font-size: 12px; font-weight: 700; fill: #FFFFFF; text-anchor: middle }
+    .chip { font-size: 10.5px; font-weight: 700; fill: #10201C; letter-spacing: .1em; text-anchor: middle }
+    .flow { stroke: #4E6F68; stroke-width: 1.6; fill: none }
+    .lbl  { font-size: 11px; fill: #9DB5AE }
+    .bad  { fill: #B3372B }
+  </style>
+  <defs>
+    <marker id="h" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#4E6F68"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="900" height="626"/>
+
+  <!-- 1 AUDIT -->
+  <rect class="pan" x="24" y="20" width="828" height="64" rx="9"/>
+  <circle cx="52" cy="43" r="13" fill="#0E6B5C"/><text class="num" x="52" y="47">1</text>
+  <text class="l1" x="76" y="48"><tspan class="st">AUDIT</tspan>   <tspan class="tool">crawl.py</tspan>  <tspan class="ar">→</tspan>  <tspan class="file">audit.json</tspan>  <tspan class="ar">→</tspan>  <tspan class="tool">report.py</tspan>  <tspan class="ar">→</tspan>  <tspan class="file">report.html</tspan></text>
+  <text class="note" x="76" y="68">What a crawler sees without JavaScript. Anything the data cannot judge stays “unknown”.</text>
+  <path class="flow" d="M58,84 L58,102" marker-end="url(#h)"/>
+
+  <!-- gate 1 -->
+  <rect class="gate" x="24" y="104" width="828" height="48" rx="9"/>
+  <rect x="40" y="118" width="62" height="20" rx="10" fill="#A96A00"/>
+  <text class="chip" x="72" y="132">HUMAN</text>
+  <text class="l2" x="116" y="133">You approve the priority order — nothing is generated before this.</text>
+  <path class="flow" d="M58,152 L58,170" marker-end="url(#h)"/>
+
+  <!-- 2 BUILD -->
+  <rect class="pan" x="24" y="172" width="828" height="84" rx="9"/>
+  <circle cx="52" cy="193" r="13" fill="#0E6B5C"/><text class="num" x="52" y="197">2</text>
+  <text class="l1" x="76" y="198"><tspan class="st">BUILD</tspan>   <tspan class="tool">generate.py</tspan>  <tspan class="ar">→</tspan>  <tspan class="file">deploy/</tspan>  +  <tspan class="file">DEPLOY.md</tspan></text>
+  <text class="l2" x="76" y="220"><tspan class="file">robots.txt</tspan> · <tspan class="file">sitemap.xml</tspan> · <tspan class="file">llms.txt</tspan> · <tspan class="file">jsonld/</tspan> · <tspan class="file">meta-draft.csv</tspan></text>
+  <text class="note" x="76" y="240">Drafts only. Unknown values are left as <tspan class="file">&lt;&lt;TODO: …&gt;&gt;</tspan>, never invented.</text>
+  <path class="flow" d="M58,256 L58,274" marker-end="url(#h)"/>
+
+  <!-- gate 2 -->
+  <rect class="gate" x="24" y="276" width="828" height="48" rx="9"/>
+  <rect x="40" y="290" width="62" height="20" rx="10" fill="#A96A00"/>
+  <text class="chip" x="72" y="304">HUMAN</text>
+  <text class="l2" x="116" y="305">A human reviews the drafts and a human deploys them — the skill never pushes to production.</text>
+  <path class="flow" d="M58,324 L58,342" marker-end="url(#h)"/>
+
+  <!-- 3 PROVE -->
+  <rect class="pan" x="24" y="344" width="828" height="64" rx="9"/>
+  <circle cx="52" cy="367" r="13" fill="#0E6B5C"/><text class="num" x="52" y="371">3</text>
+  <text class="l1" x="76" y="372"><tspan class="st">PROVE</tspan>   <tspan class="tool">verify.py deploy</tspan>  <tspan class="ar">→</tspan>  <tspan class="file">verify.json</tspan>  +  <tspan class="file">VERIFY.md</tspan></text>
+  <text class="note" x="76" y="392">Fetches the live site again and rules on each item. <tspan class="bad">Exit code 1 if anything failed.</tspan></text>
+  <path class="flow" d="M58,408 L58,436" marker-end="url(#h)"/>
+  <text class="lbl" x="74" y="428">14 days later</text>
+
+  <!-- 4 RE-MEASURE -->
+  <rect class="pan" x="24" y="438" width="828" height="84" rx="9"/>
+  <circle cx="52" cy="459" r="13" fill="#0E6B5C"/><text class="num" x="52" y="463">4</text>
+  <text class="l1" x="76" y="464"><tspan class="st">RE-MEASURE</tspan>   <tspan class="tool">crawl.py</tspan> (re-crawl)  <tspan class="ar">→</tspan>  <tspan class="tool">verify.py diff</tspan></text>
+  <text class="l2" x="76" y="486"><tspan class="tool">measure.py</tspan> form <tspan class="ar">→</tspan> [ a human runs the queries, signed out ] <tspan class="ar">→</tspan> import <tspan class="ar">→</tspan> report <tspan class="ar">→</tspan> <tspan class="file">summary.json</tspan></text>
+  <text class="note" x="76" y="506">Generated answers differ every time — ask the same question 5–10 times and record N out of M.</text>
+  <path class="flow" d="M58,522 L58,540" marker-end="url(#h)"/>
+
+  <!-- 5 LOOP -->
+  <rect class="pan" x="24" y="542" width="828" height="64" rx="9"/>
+  <circle cx="52" cy="565" r="13" fill="#0E6B5C"/><text class="num" x="52" y="569">5</text>
+  <text class="l1" x="76" y="570"><tspan class="st">LOOP</tspan>   <tspan class="tool">drift.py compare</tspan>  <tspan class="ar">→</tspan>  <tspan class="file">drift.json</tspan>  +  <tspan class="file">DRIFT.md</tspan>  <tspan class="ar">→</tspan>  <tspan class="file">next_due</tspan></text>
+  <text class="note" x="76" y="590">A regression exits 1. Done is <tspan class="file">next_due</tspan> existing — not “we fixed it”.</text>
+
+  <!-- loop back -->
+  <path class="flow" d="M852,574 L874,574 L874,480 L854,480" marker-end="url(#h)"/>
+  <text class="lbl" x="888" y="527" text-anchor="middle" transform="rotate(-90 888 527)">every 14 days</text>
+</svg>

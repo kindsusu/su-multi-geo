@@ -9,49 +9,67 @@
   <a href="README.ko.md">한국어</a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/kindsusu/su-multi-geo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kindsusu/su-multi-geo/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="version 2.0.0" src="https://img.shields.io/badge/version-2.0.0-0E6B5C">
+  <img alt="217 tests" src="https://img.shields.io/badge/tests-217-2C7A4B">
+  <img alt="stdlib only, zero dependencies" src="https://img.shields.io/badge/stdlib%20only-zero%20dependencies-1A2B28">
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-0E6B5C">
+  <a href="LICENSE"><img alt="License PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-A96A00"></a>
+  <img alt="Korean-first" src="https://img.shields.io/badge/Korean-first-B3372B">
+</p>
+
 **A Claude Code skill that audits, implements, and measures AI search visibility — with a separate lane per engine.**
 
-Most GEO guides treat "AI crawlers" as one bucket. They aren't. ChatGPT rides partly on Bing's index. Gemini has **no crawler of its own**. Claude runs three independent bots you can allow or block separately. Optimizing them as one thing is why sites get cited by one engine and invisible to another.
+Most GEO guides treat "AI crawlers" as one bucket. They aren't. ChatGPT rides partly on Bing's
+index; Gemini has **no crawler of its own** and inherits Googlebot's reach; Claude runs three
+independent bots you can allow or block separately. This skill tracks each engine back to the
+index it actually reads, keeps **Naver and Daum/Kakao as first-class lanes** instead of a
+footnote, carries the parts no crawler can see — your official answer, your third-party
+reputation — as written procedure, and **refuses to call the job done until the numbers move.**
 
-This skill splits them into lanes, tells you which control point actually decides each one, and refuses to call the job done until the numbers move.
+## Contents
+
+- [Three layers](#three-layers--reach-citation-recall)
+- [The tool pipeline](#the-tool-pipeline)
+- [Quick start](#quick-start)
+- [Sample output](#sample-output)
+- [Who it's for](#who-its-for)
+- [Method](#method)
+- [What's inside](#whats-inside)
+- [Compared to the alternatives](#compared-to-the-alternatives)
+- [Limits](#limits)
+- [Requirements](#requirements)
+- [Contributors](#contributors) · [License](#license)
 
 ---
 
 ## Three layers — reach, citation, recall
 
-This skill treats optimization not as a list of lanes but as **three layers stacked bottom-up.**
-If a lower layer is empty, nothing you do above it ever arrives.
+Optimization here is not a list of lanes. It is **three layers stacked bottom-up**, each facing
+different engines, different control points, and a different measurement cycle — which is why the
+files split into per-layer lanes (`lanes/`) and cross-layer procedures (`ops/`).
 
-```
-        ┌──────────────────────────────────────────────────┐
- ③ recall │ Does it know us without searching?              │ quarterly
-        │ · llmo — plant the brand in model knowledge       │
-        │ · reputation — third parties describe us          │
-        ├──────────────────────────────────────────────────┤
- ② citation │ Are we the evidence inside the answer?        │ weekly–monthly
-        │ · aeo — answer boxes (AI Overviews · Copilot)     │
-        │ · geo — generative engines (ChatGPT·Gemini·…)     │
-        │ · naver — AI Briefing + Naver search              │
-        ├──────────────────────────────────────────────────┤
- ① reach  │ Can crawlers read and index us at all?          │ weekly
-        │ · seo — SSR, sitemap, structured data             │
-        │ · ops/crawlers — does bot policy open the door?   │
-        └──────────────────────────────────────────────────┘
-```
+![Three layers: reach, then citation, then recall](assets/three-layers.svg)
 
-Each layer faces different engines, different control points, and a different measurement
-cycle — which is why the files split into per-layer lanes (`lanes/`) and cross-layer
-procedures (`ops/`).
-
-**The naver lane is why this repo exists in English.** Global guides skip Naver entirely,
-but Naver AI Briefing cites at the paragraph level with source chips — a structurally
-different target.
+**The naver lane is why this repo exists in English.** Global guides skip Naver entirely, but
+Naver AI Briefing cites at the paragraph level with source chips — a structurally different target.
 
 ---
 
-## Install
+## The tool pipeline
 
-As a plugin (recommended):
+Six tools, one artifact chain. The two dashed bands are the points where the work stops and waits
+for a person: **nothing is generated before you approve the priority order, and nothing reaches
+production without a human deploying it.**
+
+![Pipeline: audit, approval gate, build, deploy gate, prove, re-measure, loop](assets/pipeline.svg)
+
+---
+
+## Quick start
+
+Install as a plugin (recommended):
 
 ```
 /plugin marketplace add kindsusu/su-multi-geo
@@ -61,159 +79,173 @@ As a plugin (recommended):
 Or clone as a skill:
 
 ```bash
-# personal — available in every project
 git clone https://github.com/kindsusu/su-multi-geo.git ~/.claude/skills/su-multi-geo
-
-# project-scoped
-git clone https://github.com/kindsusu/su-multi-geo.git .claude/skills/su-multi-geo
 ```
 
 Then just ask: *"audit my site's SEO"*, *"get Gemini to cite us"*, *"create llms.txt"*.
 
----
-
-## Phase 0
-
-The quick look (home page only, ~30s):
+### Three minutes to a diagnosis
 
 ```bash
-bash tools/audit.sh example.com
+bash   tools/audit.sh example.com                    # 30s, home page only — "just show me the state"
+python tools/crawl.py example.com                    # → out/example.com/audit.json  (the measurements)
+python tools/report.py out/example.com/audit.json    # → out/example.com/report.html (8 pages, self-contained)
 ```
 
-The full audit and its report (Python 3.10+, standard library only — nothing to pip install):
+### Then
 
 ```bash
-python tools/crawl.py example.com                    # → out/example.com/audit.json
-python tools/report.py out/example.com/audit.json    # → out/example.com/report.html
+cp templates/site.example.json out/example.com/site.json      # your company's facts, written by you
+python tools/generate.py all out/example.com/audit.json \
+       --site out/example.com/site.json                       # → deploy/ + DEPLOY.md (drafts, for a human to ship)
+
+python tools/verify.py  deploy out/example.com/audit.json     # → verify.json + VERIFY.md (exit 1 on any fail)
+python tools/measure.py form   out/example.com/audit.json \
+       --engines chatgpt,google_aio --runs 5                  # → CSV + an offline HTML form for a human to fill
+python tools/drift.py   compare out/example.com/audit.json    # → drift.json + DRIFT.md (regression gate, next_due)
 ```
 
-Checks what a crawler actually sees — not what's in your source:
-
-- **noindex accidents first** — both `<meta name="robots">` and the `X-Robots-Tag` header. A staging `noindex` shipped to production voids every other optimization
-- SSR reality check (body text volume — a sudden drop means a CSR bailout)
-- sitemap presence, size, robots.txt reference, plus **what the sitemap and the crawl disagree about**
-- **crawler policy across all 11 user-agents** (AI engines plus Naver/Daum) — declared or left to chance
-- duplicate and over-length titles and descriptions (Korean/English limits detected per string), JSON-LD coverage, canonical, h1
-- `llms.txt`, 404 hygiene, redirect hops, response time, www/apex variants
-
-`crawl.py` honors `robots.txt` Disallow rules, identifies itself as `su-multi-geo-audit/2.0`,
-and waits 0.5s between requests by default. It writes a fixed-schema `audit.json`;
-`report.py` turns that into a self-contained eight-page HTML report — **every number comes
-from the audit, and anything the data cannot judge stays "unknown."**
-See [`tools/README.md`](tools/README.md) (Korean) for the full contract.
+`crawl.py` honors `robots.txt` Disallow, identifies itself as `su-multi-geo-audit/2.0`, and waits
+0.5s between requests. Full command reference and the JSON schemas: [`tools/README.md`](tools/README.md).
 
 ---
 
-## After Phase 0 — draft the files you have to change
+## Sample output
 
-The same `audit.json` drives the generator:
+Fictional values for `example.com`. The tools are Korean-first — so is the console.
 
-```bash
-cp templates/site.example.json out/example.com/site.json    # fill in your company's facts
-python tools/generate.py all out/example.com/audit.json --site out/example.com/site.json
-# → out/example.com/deploy/ : robots.txt · sitemap.xml · llms.txt · jsonld/ · meta-draft.csv
-#                             + DEPLOY.md (deployment instructions)
+```console
+$ python tools/crawl.py example.com
+
+════════════════════════════════════════════
+ Phase 0 전수 진단 — https://example.com
+ 2026-09-03 10:24 · 42페이지
+════════════════════════════════════════════
+
+── 0. noindex 사고 점검 (최우선) ──
+🚨 noindex 3개 페이지 — 다른 모든 최적화가 무효다. 이것부터 고쳐라
+
+── 1. 크롤 통계 ──
+   크롤 페이지     : 42
+   고유 title      : 37
+   고유 설명       : 21
+   JSON-LD 보유    : 16
+
+── 2. robots / sitemap ──
+   robots.txt      : 있음 (HTTP 200)
+   Sitemap 선언    : ❌ robots.txt에 없음
+   https://example.com/sitemap.xml            HTTP 200  (URL 28개)
+   사이트맵 vs 크롤: 사이트맵에만 3 · 크롤에만 17
+
+── 3. AI·국내 크롤러 정책 (robots.txt 실효 판정) ──
+   GPTBot             미설정 → 기본 허용 (명시 권장)
+   OAI-SearchBot      미설정 → 기본 허용 (명시 권장)
+   ChatGPT-User       미설정 → 기본 허용 (명시 권장)
+   ClaudeBot          미설정 → 기본 허용 (명시 권장)
+   Claude-SearchBot   미설정 → 기본 허용 (명시 권장)
+   Claude-User        미설정 → 기본 허용 (명시 권장)
+   PerplexityBot      🚫 명시 차단 — 이 엔진 인용을 포기한 상태다
+   Perplexity-User    🚫 명시 차단 — 이 엔진 인용을 포기한 상태다
+   Google-Extended    미설정 → 기본 허용 (명시 권장)
+   Yeti               미설정 → 기본 허용 (명시 권장)
+   Daumoa             미설정 → 기본 허용 (명시 권장)
+   ※ Google-Extended는 UA가 아니라 robots 토큰이다 — 서버 로그에 안 잡힌다
+   ※ Yeti는 네이버 검색 크롤러다 — 차단이면 NEO 레인 전체가 닫힌다
+
+── 4. llms.txt / 응답 위생 ──
+   /llms.txt        HTTP 404
+   /llms-full.txt   HTTP 404
+   404 동작        : HTTP 200  (404여야 정상)
+   리다이렉트 홉   : 1
+   홈 응답 시간    : 412ms
+   도메인 변형     : https://www.example.com → ok
+
+── 5. 레인 점수표 ──
+   SEO         ❌  NOINDEX, TITLE_DUPLICATE, SITEMAP_CRAWL_MISMATCH, SOFT_404
+   AEO         ⚠️  JSONLD_MISSING, FAQ_MISSING
+   GEO         ❌  AI_CRAWLER_BLOCKED
+   LLMO        ⚠️  ORG_JSONLD_MISSING
+   NEO         ⚠️  NAVER_VERIFY_MISSING
+   reputation  —  사이트 밖 표면 — 점검 대상 (lanes/reputation.md)
+
+── 6. findings ──
+   🚨[SEO] noindex가 3개 페이지에 걸려 있다 — 다른 모든 최적화가 무효다.
+   🚨[GEO] AI 크롤러 2종이 차단돼 있다 (PerplexityBot, Perplexity-User) — 해당 엔진 인용을 포기한 상태다.
+   ⚠️ [SEO] 같은 title을 쓰는 페이지가 6개다 (14%) — 중복 콘텐츠로 묶인다.
+   ⚠️ [SEO] 사이트맵과 실제 크롤 결과가 어긋난다 — 사이트맵에만 3개, 크롤에만 17개.
+   ⚠️ [SEO] 없는 주소가 404가 아니라 HTTP 200를 낸다 — soft 404는 색인 예산을 태운다.
+   ⚠️ [AEO] JSON-LD가 한 건도 없는 페이지가 26개다 (62%).
+   ⚠️ [AEO] FAQPage/QAPage JSON-LD가 한 건도 없다 — 답변 박스에 뽑힐 표면이 없다.
+   ⚠️ [LLMO] Organization/LocalBusiness JSON-LD가 없다 — 엔티티를 붙잡을 앵커가 없다.
+   ⚠️ [NEO] naver-site-verification 메타가 없다 — 서치어드바이저 미연결 가능성.
+   · [GEO] AI 크롤러 7종이 robots.txt에 명시돼 있지 않다 — 기본 허용이지만 우연에 맡긴 상태다.
+   · [GEO] /llms.txt가 없다 (HTTP 404) — 모델에 줄 요약 지도를 아직 안 만들었다.
+
+════════════════════════════════════════════
+ 스크립트로 안 되는 것 (사람이 확인):
+  · GSC / Bing WMT / 네이버 서치어드바이저 색인 수
+  · 각 엔진에 직접 질의한 AI 인용 O/X (특히 Gemini)
+  · 제3자 평판 표면 (lanes/reputation.md)
+════════════════════════════════════════════
+
+audit.json 저장: out/example.com/audit.json
+보고서 생성    : python tools/report.py out/example.com/audit.json
 ```
 
-- **The existing robots.txt is preserved.** No `Disallow` is removed or loosened, and a
-  crawler that is already blocked is never flipped to allow — the before/after diff goes
-  into `DEPLOY.md`
-- The sitemap carries only URLs that are 200, not noindexed, and self-canonical.
-  `lastmod` is omitted rather than invented
-- **Nothing is made up.** Values come from measurement (`audit.json`) and from the facts you
-  wrote (`site.json`); everything else is left as `<<TODO: ...>>`. FAQ entries are used only
-  when their `page_url` was actually crawled, and a human verifies the wording matches the
-  visible text character for character
-- **Everything is a draft.** A human reviews it and a human deploys it — `DEPLOY.md` carries
-  the post-deploy `curl` checks, the rollback, and the remaining TODOs
+After the human deploys, the same site is fetched again and each item is ruled on — a file
+sitting in the package proves nothing:
+
+```console
+$ python tools/verify.py deploy out/example.com/audit.json
+
+════════════════════════════════════════════
+ 배포 검증 — example.com
+════════════════════════════════════════════
+ ❌ llms.todo             llms.txt에 <<TODO 표식이 3곳 남아 있다
+ ⚠️ meta.applied          meta 초안 12건 중 7건이 아직 반영되지 않았다
+ ✅ noindex               새로 생긴 noindex 없음 (28페이지 확인)
+ ✅ robots.status         robots.txt HTTP 200
+ ✅ robots.preserved      기존 robots.txt 24줄이 그대로 서빙된다
+ ✅ robots.policy         추가한 UA 블록이 실효 정책으로 확인된다
+ ✅ robots.sitemap        robots.txt에 `Sitemap:` 줄이 있다
+ ✅ sitemap.reachable     https://example.com/sitemap.xml HTTP 200
+ ✅ sitemap.locs          <loc> 28건 전수 HTTP 200
+ ✅ sitemap.noindex       사이트맵에 noindex 페이지가 없다
+ ✅ sitemap.canonical     사이트맵 URL과 canonical이 일치한다
+ ✅ llms.status           llms.txt HTTP 200
+ ✅ jsonld.type           패키지와 라이브 페이지의 @type이 일치한다
+ ✅ jsonld.visible        LD의 문구가 가시 텍스트에 그대로 있다
+ — jsonld.org_id         확인할 Organization LD가 없다
+
+ 결과: ❌ 1 · ⚠️ 1 · ✅ 12 · — 1
+ 실패가 있다 — 배포는 아직 끝나지 않았다.
+
+verify.json: out/example.com/verify.json
+VERIFY.md  : out/example.com/VERIFY.md
+
+$ echo $?
+1
+```
 
 ---
 
-## After deployment — prove it, with the crawler's eyes
+## Who it's for
 
-```bash
-python tools/verify.py deploy out/example.com/audit.json   # right after deployment
-# → verify.json + VERIFY.md · exit code 1 if anything failed
-
-python tools/crawl.py example.com --out out/after          # re-crawl 14 days later
-python tools/verify.py diff out/example.com/audit.json out/after/example.com/audit.json
-```
-
-A file sitting in the package proves nothing. `verify.py` **fetches the live site again**
-and rules on each item:
-
-- **new noindex first** — if the deployment introduced one, nothing else matters
-- every original robots.txt line still served, and the added UA blocks actually in effect
-  (policy re-adjudicated, not string-matched)
-- **every** sitemap `<loc>` returns 200, none is noindexed, none disagrees with its canonical
-- a leftover `<<TODO` in llms.txt fails the run as an incomplete deployment
-- **JSON-LD that says things the page does not** — FAQ questions and answers, organization
-  name, product name and price must appear verbatim in the visible text, or it fails as a
-  spam risk
-- `diff` reports findings resolved/new/persisting, lane scores before and after, and URLs
-  that disappeared
-
-It never requests a host other than the target (redirect destinations are re-checked).
-Full check list in [`tools/README.md`](tools/README.md).
+- **Businesses selling into the Korean market** — Naver and Daum/Kakao are lanes here, not an appendix
+- **In-house marketing, PR, and HR** — the recall layer covers third-party reputation surfaces, job-board company pages included
+- **Agencies and freelancers** — a fixed-schema audit artifact and a deployment brief you can hand to a client or a build shop
+- **Claude Code users** — install it and ask in plain language; the tools run with no API keys and nothing to `pip install`
 
 ---
 
-## Citation measurement — the part a crawler cannot see
+## Method
 
-```bash
-python tools/measure.py init  out/example.com/audit.json   # blank query set — a human fills it
-python tools/measure.py form  out/example.com/audit.json --engines chatgpt,google_aio --runs 5
-# → form-<date>.csv (Excel) + form-<date>.html (offline entry form)
-#   ── a human runs the queries in a signed-out private window ──
-python tools/measure.py import out/example.com/audit.json <filled CSV>
-python tools/measure.py report out/example.com/audit.json  # → summary.json + MEASURE.md
-```
-
-Generated answers differ every time. **"It showed up" is not a sample** — ask the same
-question 5-10 times on the same day and record `N out of M`. This tool pins that format down.
-
-- **Manual entry is the backbone.** The loop runs end to end with no API keys at all. The HTML
-  form is a single file with zero external resources, so it opens offline, and entries are
-  auto-saved in the browser
-- **The tool never invents a question.** `init` gives you blanks plus hints (the sections it
-  actually crawled). Once fixed, the wording never changes — change it and the trend is meaningless
-- Aggregation covers per-engine brand/non-brand citation rates, **which URLs got cited**
-  (ours vs competitors), the trend against the baseline, and **the next re-measure date**
-  (last measurement + 14 days)
-- `measure.py auto` is **optional**. It runs ChatGPT and Claude only when `OPENAI_API_KEY` /
-  `ANTHROPIC_API_KEY` are in the environment; otherwise it points you at the manual form and
-  exits cleanly. Both modes append to the same log format. **Keys are read from the environment
-  only and never written to any file** — raw responses are not stored either
-- ⚠️ The API is a different surface from the signed-out web UI. Automation does **not** replace
-  manual measurement
-
----
-
-## Drift — put "re-measure what, and when" in a file, not in your memory
-
-```bash
-python tools/drift.py snapshot out/example.com/audit.json --label "baseline"   # before you touch anything
-# ── deploy → 14 days → re-crawl + re-measure ──
-python tools/drift.py snapshot out/example.com/audit.json \
-       --measure out/example.com/measure/summary.json --label "after P1"
-python tools/drift.py compare  out/example.com/audit.json   # → drift.json + DRIFT.md
-python tools/drift.py status   out/example.com/audit.json   # days left until the next re-measure
-python tools/drift.py timeline out/example.com/audit.json   # → TIMELINE.md
-```
-
-A re-measure left to memory never happens. **Snapshots pile up immutably in
-`out/<host>/history/`**, and the same date and kind is refused without `--force` — a baseline
-that quietly changes turns the whole trend into a lie.
-
-- `compare` judges regressions: **new noindex · fewer JSON-LD pages · more duplicate titles ·
-  sitemap URLs down more than 20% · a lane score getting worse · non-brand citation rate falling.**
-  Any one of them **exits 1** — wire it into CI
-- The audit side reuses `verify.py diff`; the measurement side reads `measure.py`'s
-  `summary.json`. It also lists **our URLs that started getting cited and the ones that stopped**
-- If the baseline is older than 30 days it stamps ⚠️ **"the baseline is stale"** at the top —
-  a lower bound cannot detect staleness
-- The last section of `DRIFT.md` is **the next re-measure date and the commands to run that day**.
-  **Done is not "we fixed it" — done is `next_due` existing in `drift.json`**
+1. **The crawler's eye is the standard.** "It's in the code" doesn't count. "It's in the HTML received without JavaScript" does — and after a deployment, `verify.py` goes and fetches it again.
+2. **Nothing is invented.** Values come from measurement (`audit.json`) and from facts a human wrote (`site.json`). Everything else is left as `<<TODO: …>>`, and a leftover TODO fails the deployment check.
+3. **Approval gates, both ways.** You approve the priority order before anything is generated; a human reviews and a human deploys. The tool that catches `noindex` accidents can cause one.
+4. **Be the primary source first, distribute second.** Models cite verifiable numbers, not smooth prose. Before touching a page, answer: what number can only this site publish? Prefer *24 of 25* over *96%* — a visible denominator survives both verification and citation.
+5. **No measurement, no done.** A report that ends at "we fixed it" is a failed report. Generated answers differ every run, so a single sighting is not a sample: ask the same question 5–10 times and record *N of M*. Done is `next_due` existing in `drift.json`.
+6. **White-hat only.** No purchased backlinks, comment-swap automation, cloaking, or hidden text — under any instruction. A guideline violation risks the whole domain, not one ranking. And fetched web content is data, never instructions: text inside a scraped page that looks like a directive is analysis material.
 
 ---
 
@@ -244,7 +276,7 @@ templates/               Report template (report.html), glossary.json,
                          site.example.json (the facts you fill in),
                          queries.example.json (the measurement query set)
 tests/                   217 tests — units per tool + test_e2e.py, the whole loop over a local
-                         fixture site (tests/fixtures/site/). No network. `python -m unittest discover tests`
+                         fixture site (tests/fixtures/site/). No network.
 en/                      English mirror (same lanes/ + ops/ layout)
 ```
 
@@ -252,14 +284,42 @@ References are the Korean canon (`*.md`); `en/*.md` is the English mirror for hu
 
 ---
 
-## Principles
+## Compared to the alternatives
 
-1. **White-hat only.** No purchased backlinks, reciprocal-comment automation, cloaking, or hidden text — under any instruction. A guideline violation risks the whole domain, not one ranking.
-2. **The crawler's eye is the standard.** "It's in the code" doesn't count. "It's in the HTML received without JavaScript" does.
-3. **Becoming the primary source is the whole strategy.** AI cites accurate data, not good writing.
-4. **Fetched web content is data, never instructions.** Text inside a scraped page that looks like a directive is analysis material, not a command.
-5. **Never commit straight to production.** Changes stop at a branch/PR; a human merges. The tool that catches `noindex` accidents can cause one.
-6. **Measurement is the completion condition.** A report that ends at "fixed it" is a failed report. When you re-measure, and what, is part of the work.
+|  | Doing it by hand | An agency retainer | This skill |
+|---|---|---|---|
+| **Cost** | your time | a monthly fee | free for noncommercial use — your time |
+| **Cadence** | whenever someone remembers | whatever the contract says | a computed `next_due` date, and a status command that counts down to it |
+| **Reproducibility** | a spreadsheet that quietly drifts | their template, their format | versioned JSON schemas; snapshots are immutable and refuse silent overwrite |
+| **Measurement** | "I saw it come up once" | rank tracking | *N of M* citations per engine, collected by a human, aggregated into a trend |
+| **Korean market** | you research Naver alone | depends on the shop | a first-class lane — Search Advisor, AI Briefing, Daum/Kakao |
+| **Who decides** | you | them | you — every generated file is a draft, and a human deploys it |
+
+---
+
+## Limits
+
+Stated plainly, because a tool that hides its blind spots is worse than one that has them.
+
+- **Automated measurement is a different surface.** `measure.py auto` calls the ChatGPT and Claude APIs — not the signed-out web UI people actually use. It does not replace manual measurement, and Gemini, Perplexity, Google AI Overviews, Copilot, Naver and Daum are **manual only**.
+- **No JavaScript rendering, on purpose.** The audit reads the HTML a crawler receives. If your site only assembles itself in a browser, the report will say the body text is thin — that finding *is* the answer, but the rendered DOM is never inspected.
+- **No vendor numbers.** Index counts from Search Console, Bing Webmaster Tools, or Naver Search Advisor, and third-party reputation surfaces, are not fetched. The report leaves those cells "unknown" rather than guessing.
+- **Citation is never guaranteed.** Nothing here makes an engine cite you. It removes the reasons it cannot, and gives you a way to measure whether it started.
+- **Korean-first output.** The console, `report.html`, and the generated `DEPLOY.md` / `VERIFY.md` / `MEASURE.md` / `DRIFT.md` are Korean. `en/` mirrors the playbooks for English readers; the tool output is not mirrored.
+- **Bounded crawl.** 300 pages by default, one host only, and `robots.txt` Disallow is respected — a disallowed section is not audited.
+- **Four phases have no tooling.** Message, intent landing, reputation, and Naver registration are human decisions. The tools support them with measured values; they do not make them.
+
+---
+
+## Requirements
+
+- **Python 3.10+** — standard library only, nothing to `pip install`
+- **bash + curl** — for `tools/audit.sh` only
+- CI runs the suite on ubuntu · windows · macos × Python 3.10 · 3.12 · 3.13. There is no dependency-install step in the workflow, which is the proof that "standard library only" is true.
+
+```bash
+python -m unittest discover tests     # 217 tests, no network
+```
 
 ---
 
