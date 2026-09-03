@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="${html_lang}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>${doc_title}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+:root{
+  --bg:#F7F9F8; --surface:#FFFFFF; --surface-2:#EFF4F2;
+  --ink:#1A2B28; --ink-muted:#5A6C68; --border:#DDE5E2;
+  --accent:#0E6B5C; --accent-soft:#E2F0EC;
+  --ok:#2C7A4B; --ok-soft:#E4F2E9;
+  --warn:#A96A00; --warn-soft:#FBEEDA;
+  --bad:#B3372B; --bad-soft:#FAE5E2;
+  --na:#5A6C68; --na-soft:#EAEFED;
+  --tip-bg:#1A2B28; --tip-fg:#F7F9F8;
+  --shadow:0 1px 2px rgba(26,43,40,.06),0 8px 24px rgba(26,43,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#101A18; --surface:#172422; --surface-2:#1D2E2B;
+    --ink:#E4EDEA; --ink-muted:#93A6A1; --border:#263936;
+    --accent:#3FB39D; --accent-soft:#12332E;
+    --ok:#57B87C; --ok-soft:#12301F;
+    --warn:#D9A441; --warn-soft:#33270D;
+    --bad:#E0715F; --bad-soft:#361A16;
+    --na:#93A6A1; --na-soft:#1D2E2B;
+    --tip-bg:#E4EDEA; --tip-fg:#101A18;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#101A18; --surface:#172422; --surface-2:#1D2E2B;
+  --ink:#E4EDEA; --ink-muted:#93A6A1; --border:#263936;
+  --accent:#3FB39D; --accent-soft:#12332E;
+  --ok:#57B87C; --ok-soft:#12301F;
+  --warn:#D9A441; --warn-soft:#33270D;
+  --bad:#E0715F; --bad-soft:#361A16;
+  --na:#93A6A1; --na-soft:#1D2E2B;
+  --tip-bg:#E4EDEA; --tip-fg:#101A18;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"IBM Plex Sans KR","Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  font-size:15px; line-height:1.75; word-break:keep-all; overflow-wrap:anywhere;
+}
+.wrap{max-width:1060px;margin:0 auto;padding:0 20px}
+a{color:var(--accent)}
+code,.mono,td.num,.num{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+.url,.brk{word-break:break-all;overflow-wrap:break-word}
+
+/* ── header ── */
+header.top{padding:34px 0 18px;border-bottom:1px solid var(--border);background:var(--surface)}
+header.top .eyebrow{font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600;margin:0}
+header.top h1{margin:.35rem 0 .3rem;font-size:1.85rem;line-height:1.3;letter-spacing:-.01em}
+header.top .meta{margin:0;color:var(--ink-muted);font-size:.85rem}
+.themebtn{position:absolute;right:20px;top:20px;background:var(--surface-2);color:var(--ink);border:1px solid var(--border);
+  border-radius:999px;padding:.3rem .8rem;font:inherit;font-size:.78rem;cursor:pointer}
+header.top{position:relative}
+
+/* ── tabs ── */
+nav.tabs{position:sticky;top:0;z-index:30;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:var(--shadow)}
+.tabrow{display:flex;gap:2px;overflow-x:auto;scrollbar-width:thin}
+.tabrow a{flex:0 0 auto;padding:.7rem .85rem;font-size:.85rem;text-decoration:none;color:var(--ink-muted);
+  border-bottom:2px solid transparent;white-space:nowrap}
+.tabrow a:hover{color:var(--ink)}
+.tabrow a.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+
+/* ── sections ── */
+main{padding:26px 0 60px}
+section{margin:0 0 46px}
+body.js section{display:none;margin-bottom:0}
+body.js section.on{display:block}
+h2{font-size:1.32rem;margin:.2rem 0 .2rem;letter-spacing:-.01em}
+h2 .n{color:var(--accent);font-family:"IBM Plex Mono",monospace;font-size:.95rem;margin-right:.5rem}
+h3{font-size:1.02rem;margin:1.9rem 0 .5rem}
+.lede{color:var(--ink-muted);margin:.1rem 0 1.4rem;font-size:.92rem}
+p{margin:.7rem 0}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin:14px 0;box-shadow:var(--shadow)}
+.verdict{border-left:4px solid var(--accent);font-size:1.02rem}
+.verdict strong{font-size:1.1rem}
+.note{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 15px;font-size:.88rem;color:var(--ink-muted)}
+
+/* ── chips ── */
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 6px;padding:0;list-style:none}
+.chips li{margin:0}
+.chip{display:flex;flex-direction:column;gap:2px;min-width:132px;padding:.6rem .85rem;border-radius:11px;
+  text-decoration:none;border:1px solid var(--border);background:var(--surface)}
+.chip .lane{font-weight:700;font-size:.9rem;letter-spacing:.01em}
+.chip .st{font-size:.76rem;font-variant-numeric:tabular-nums}
+.chip.ok{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.chip.warn{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.chip.bad{background:var(--bad-soft);border-color:var(--bad);color:var(--bad)}
+.chip.na{background:var(--na-soft);border-color:var(--border);color:var(--na)}
+
+.pill{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.74rem;font-weight:600;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.na{background:var(--na-soft);color:var(--na)}
+.pill.info{background:var(--accent-soft);color:var(--accent)}
+
+/* ── tables ── */
+.tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface);margin:14px 0}
+table{border-collapse:collapse;width:100%;min-width:520px;font-size:.88rem}
+caption{text-align:left;padding:12px 16px 0;color:var(--ink-muted);font-size:.82rem}
+th,td{padding:.62rem .9rem;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+th{background:var(--surface-2);font-weight:600;font-size:.82rem;color:var(--ink-muted);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+
+ul.plain{margin:.6rem 0;padding-left:1.15rem}
+ul.plain li{margin:.3rem 0}
+details.more{margin:.5rem 0 0}
+details.more summary{cursor:pointer;font-size:.83rem;color:var(--ink-muted)}
+details.more ul{font-size:.82rem;max-height:280px;overflow:auto;margin:.5rem 0 0}
+
+/* ── 용어 툴팁 (details 금지 — 크롬이 블록으로 렌더해 줄이 깨진다) ── */
+.t{position:relative;border-bottom:1px dashed var(--accent);cursor:help;outline:none}
+.t::after{
+  content:attr(data-d);position:absolute;left:0;top:calc(100% + 7px);z-index:50;
+  width:min(330px,72vw);background:var(--tip-bg);color:var(--tip-fg);
+  padding:.6rem .75rem;border-radius:9px;font-size:.79rem;line-height:1.6;font-weight:400;
+  text-align:left;white-space:normal;word-break:keep-all;box-shadow:0 8px 28px rgba(0,0,0,.25);
+  opacity:0;visibility:hidden;transition:opacity .12s ease;
+}
+.t:hover::after,.t:focus::after,.t:focus-visible::after{opacity:1;visibility:visible}
+
+/* ── pager ── */
+.pager{display:flex;justify-content:space-between;gap:12px;margin:30px 0 0;padding-top:20px;border-top:1px solid var(--border)}
+.pager a{flex:0 1 auto;max-width:47%;text-decoration:none;color:var(--ink);background:var(--surface);
+  border:1px solid var(--border);border-radius:10px;padding:.6rem .9rem;font-size:.85rem}
+.pager a:hover{border-color:var(--accent);color:var(--accent)}
+.pager .dir{display:block;font-size:.7rem;color:var(--ink-muted);letter-spacing:.08em;text-transform:uppercase}
+.pager a.off{visibility:hidden}
+body:not(.js) .pager{display:none}
+
+footer.bot{border-top:1px solid var(--border);background:var(--surface);padding:22px 0;color:var(--ink-muted);font-size:.8rem}
+@media print{nav.tabs,.pager,.themebtn{display:none}body.js section{display:block}}
+@media (max-width:560px){header.top h1{font-size:1.45rem}.chip{min-width:112px}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <p class="eyebrow">${eyebrow}</p>
+    <h1>${doc_title}</h1>
+    <p class="meta">${meta_line}</p>
+    <button class="themebtn" type="button" id="themebtn">${theme_label}</button>
+  </div>
+</header>
+
+<nav class="tabs"><div class="wrap tabrow">${tabs}</div></nav>
+
+<main class="wrap">
+
+  <section id="p1">
+    <h2><span class="n">01</span>${t1}</h2>
+    <p class="lede">${l1}</p>
+    ${p1}
+  </section>
+
+  <section id="p2">
+    <h2><span class="n">02</span>${t2}</h2>
+    <p class="lede">${l2}</p>
+    ${p2}
+  </section>
+
+  <section id="p3">
+    <h2><span class="n">03</span>${t3}</h2>
+    <p class="lede">${l3}</p>
+    ${p3}
+  </section>
+
+  <section id="p4">
+    <h2><span class="n">04</span>${t4}</h2>
+    <p class="lede">${l4}</p>
+    ${p4}
+  </section>
+
+  <section id="p5">
+    <h2><span class="n">05</span>${t5}</h2>
+    <p class="lede">${l5}</p>
+    ${p5}
+  </section>
+
+  <section id="p6">
+    <h2><span class="n">06</span>${t6}</h2>
+    <p class="lede">${l6}</p>
+    ${p6}
+  </section>
+
+  <section id="p7">
+    <h2><span class="n">07</span>${t7}</h2>
+    <p class="lede">${l7}</p>
+    ${p7}
+  </section>
+
+  <section id="p8">
+    <h2><span class="n">08</span>${t8}</h2>
+    <p class="lede">${l8}</p>
+    ${p8}
+  </section>
+
+  <div class="pager">
+    <a id="prev" href="#p1"><span class="dir">${prev_label}</span><span id="prevt"></span></a>
+    <a id="next" href="#p2"><span class="dir">${next_label}</span><span id="nextt"></span></a>
+  </div>
+</main>
+
+<footer class="bot"><div class="wrap">${footer_note}</div></footer>
+
+<script>
+(function () {
+  var ids = ["p1","p2","p3","p4","p5","p6","p7","p8"];
+  var titles = ${titles_json};
+  document.body.classList.add("js");
+  var tabs = document.querySelectorAll(".tabrow a");
+  var prev = document.getElementById("prev"), next = document.getElementById("next");
+  var prevt = document.getElementById("prevt"), nextt = document.getElementById("nextt");
+
+  function show(id) {
+    var i = ids.indexOf(id);
+    if (i < 0) { i = 0; id = ids[0]; }
+    ids.forEach(function (pid, k) {
+      var el = document.getElementById(pid);
+      if (el) el.classList.toggle("on", k === i);
+    });
+    for (var k = 0; k < tabs.length; k++) {
+      tabs[k].classList.toggle("on", tabs[k].getAttribute("href") === "#" + id);
+    }
+    if (i > 0) { prev.classList.remove("off"); prev.href = "#" + ids[i-1]; prevt.textContent = titles[i-1]; }
+    else { prev.classList.add("off"); }
+    if (i < ids.length - 1) { next.classList.remove("off"); next.href = "#" + ids[i+1]; nextt.textContent = titles[i+1]; }
+    else { next.classList.add("off"); }
+    window.scrollTo(0, 0);
+  }
+  function fromHash() { show((location.hash || "#p1").slice(1)); }
+  window.addEventListener("hashchange", fromHash);
+  fromHash();
+
+  var btn = document.getElementById("themebtn");
+  btn.addEventListener("click", function () {
+    var root = document.documentElement;
+    var dark = root.getAttribute("data-theme") === "dark" ||
+      (!root.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    root.setAttribute("data-theme", dark ? "light" : "dark");
+  });
+})();
+</script>
+</body>
+</html>

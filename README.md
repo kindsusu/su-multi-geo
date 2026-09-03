@@ -72,19 +72,35 @@ Then just ask: *"audit my site's SEO"*, *"get Gemini to cite us"*, *"create llms
 
 ---
 
-## Phase 0 in one command
+## Phase 0
+
+The quick look (home page only, ~30s):
 
 ```bash
 bash tools/audit.sh example.com
+```
+
+The full audit and its report (Python 3.10+, standard library only — nothing to pip install):
+
+```bash
+python tools/crawl.py example.com                    # → out/example.com/audit.json
+python tools/report.py out/example.com/audit.json    # → out/example.com/report.html
 ```
 
 Checks what a crawler actually sees — not what's in your source:
 
 - **noindex accidents first** — both `<meta name="robots">` and the `X-Robots-Tag` header. A staging `noindex` shipped to production voids every other optimization
 - SSR reality check (body text volume — a sudden drop means a CSR bailout)
-- sitemap presence, size, robots.txt reference
-- **AI crawler policy across all 9 user-agents** — declared or left to chance
-- `llms.txt`, 404 hygiene, redirect hops, response time
+- sitemap presence, size, robots.txt reference, plus **what the sitemap and the crawl disagree about**
+- **crawler policy across all 11 user-agents** (AI engines plus Naver/Daum) — declared or left to chance
+- duplicate and over-length titles and descriptions (Korean/English limits detected per string), JSON-LD coverage, canonical, h1
+- `llms.txt`, 404 hygiene, redirect hops, response time, www/apex variants
+
+`crawl.py` honors `robots.txt` Disallow rules, identifies itself as `su-multi-geo-audit/2.0`,
+and waits 0.5s between requests by default. It writes a fixed-schema `audit.json`;
+`report.py` turns that into a self-contained eight-page HTML report — **every number comes
+from the audit, and anything the data cannot judge stays "unknown."**
+See [`tools/README.md`](tools/README.md) (Korean) for the full contract.
 
 ---
 
@@ -103,7 +119,12 @@ ops/                     Cross-layer procedures
 ├── crawlers.md          Bot policy — 9 UAs across 4 vendors + Google-Extended
 ├── intent.md            Question discovery, selection, mapping, format
 └── measure.md           Baseline → re-measure → citation protocol → corrections
-tools/audit.sh           Phase 0 crawler-eye audit (+ test_audit.sh)
+tools/                   Audit tooling, zero dependencies — see tools/README.md
+├── audit.sh             Quick one-page audit (+ test_audit.sh)
+├── crawl.py             Full-site audit → audit.json
+└── report.py            audit.json → self-contained HTML report
+templates/               Report template (report.html) + glossary.json
+tests/                   Unit tests for crawl.py and report.py (no network)
 en/                      English mirror (same lanes/ + ops/ layout)
 ```
 

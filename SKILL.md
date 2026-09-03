@@ -25,11 +25,28 @@ description: SEO·AEO·GEO(ChatGPT·Gemini·Claude·Perplexity)·LLMO·NEO(네�
 
 ## Phase 0 — 진단
 
-도메인(또는 로컬 프로젝트)을 받아 `tools/audit.sh <도메인>`을 실행하거나 동등한 curl을
-직접 돌린다. **noindex가 최우선 점검이다** — 스테이징용 noindex의 프로덕션 배포는 다른
-모든 최적화를 무효로 만든다. `<meta name="robots">`와 `X-Robots-Tag` 헤더 **둘 다** 본다.
+도메인(또는 로컬 프로젝트)을 받아 크롤러의 눈으로 훑는다. 도구는 둘이다:
 
-점수표를 만들어 제시하고 **우선순위 승인을 받은 뒤** 진행한다:
+```bash
+bash   tools/audit.sh example.com      # 빠른 1페이지 진단 (홈만, 30초)
+python tools/crawl.py example.com      # 전수 진단 → out/<host>/audit.json
+python tools/report.py out/<host>/audit.json   # → out/<host>/report.html
+```
+
+`audit.sh`는 "일단 상태부터 보자"용이다. **보고할 것이면 `crawl.py` → `report.py`를 돌린다** —
+홈 한 장만 보고 내린 판정은 상세 페이지에서 뒤집힌다. 도구 사용법과 audit.json 스키마는
+`tools/README.md`에 있다.
+
+**Phase 0 완료 산출물 = `audit.json` + `report.html`.** 둘이 없으면 Phase 0은 안 끝났다.
+
+**noindex가 최우선 점검이다** — 스테이징용 noindex의 프로덕션 배포는 다른 모든 최적화를
+무효로 만든다. `<meta name="robots">`와 `X-Robots-Tag` 헤더 **둘 다** 본다 (두 도구 모두 본다).
+
+⚠️ 스크립트가 못 보는 것은 보고서에도 "미확인"으로 남긴다. **추정으로 칸을 채우지 마라** —
+GSC·서치어드바이저 색인 수, 엔진별 AI 인용 O/X, 제3자 평판은 사람이 확인할 항목이다.
+
+`report.html`의 레인 점수표는 `audit.json`에서 자동으로 나온다. 그대로 제시하고
+**우선순위 승인을 받은 뒤** 진행한다:
 
 | 레인 | 판정 | 판정 근거 |
 |---|---|---|

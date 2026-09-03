@@ -70,19 +70,34 @@ git clone https://github.com/kindsusu/su-multi-geo.git .claude/skills/su-multi-g
 
 ---
 
-## Phase 0 — 한 줄 진단
+## Phase 0 — 진단
+
+빠른 한 줄 (홈 1페이지, 30초):
 
 ```bash
 bash tools/audit.sh example.com
+```
+
+전수 진단과 보고서 (파이썬 3.10+, 표준 라이브러리만 — pip 설치 없음):
+
+```bash
+python tools/crawl.py example.com                    # → out/example.com/audit.json
+python tools/report.py out/example.com/audit.json    # → out/example.com/report.html
 ```
 
 소스에 뭐가 있는지가 아니라 **크롤러가 실제로 보는 것**을 확인한다:
 
 - **noindex 사고 최우선** — `<meta name="robots">`와 `X-Robots-Tag` 헤더 양쪽. 스테이징용 noindex의 프로덕션 배포는 다른 모든 최적화를 무효로 만든다
 - SSR 실태 점검 (본문 텍스트량 — 갑자기 줄면 CSR 바일아웃 사고)
-- 사이트맵 존재·규모·robots.txt 참조
-- **AI 크롤러 정책 9종 전수** — 명시됐는지, 우연에 맡겨졌는지
-- `llms.txt`, 404 위생, 리다이렉트 홉, 응답 시간
+- 사이트맵 존재·규모·robots.txt 참조 + **사이트맵과 실제 크롤 결과의 차집합**
+- **AI·국내 크롤러 정책 11종 전수** — 명시됐는지, 우연에 맡겨졌는지
+- 제목·설명 중복과 길이(한글/영문 자동 판별), JSON-LD 커버리지, canonical, h1
+- `llms.txt`, 404 위생, 리다이렉트 홉, 응답 시간, www↔apex 변형
+
+`crawl.py`는 `robots.txt`의 Disallow를 존중하고, `su-multi-geo-audit/2.0`으로 신분을 밝히고,
+기본 0.5초 간격으로 다닌다. 결과는 고정 스키마 `audit.json`이고 `report.py`가 그걸 읽어
+여덟 페이지짜리 독립 HTML 보고서를 만든다 — **수치는 전부 진단 결과에서 오고, 판정할 수
+없는 칸은 "미확인"으로 남는다.** 자세한 사용법은 [`tools/README.md`](tools/README.md).
 
 ---
 
@@ -101,7 +116,12 @@ ops/                     층을 가로지르는 절차
 ├── crawlers.md          봇 정책 — 4개 벤더 9개 UA + Google-Extended 예외
 ├── intent.md            질문 발굴·선별·페이지 매핑·포맷
 └── measure.md           기준선 → 재측정 → 인용 측정 → 오인용 정정
-tools/audit.sh           Phase 0 크롤러 눈 진단 (+ test_audit.sh)
+tools/                   진단 도구 (의존성 0) — tools/README.md 참조
+├── audit.sh             빠른 1페이지 진단 (+ test_audit.sh)
+├── crawl.py             전수 진단 → audit.json
+└── report.py            audit.json → 독립 HTML 보고서
+templates/               보고서 템플릿 (report.html) + 용어 사전 (glossary.json)
+tests/                   crawl.py·report.py 유닛 테스트 (네트워크 없음)
 en/                      영문 미러 (lanes/·ops/ 동일 구조)
 ```
 
