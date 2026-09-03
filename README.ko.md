@@ -148,6 +148,33 @@ python tools/verify.py diff out/example.com/audit.json out/after/example.com/aud
 
 ---
 
+## AI 인용 측정 — 크롤로는 못 재는 것
+
+```bash
+python tools/measure.py init  out/example.com/audit.json   # 질의 세트 빈칸 → 사람이 채운다
+python tools/measure.py form  out/example.com/audit.json --engines chatgpt,google_aio --runs 5
+# → form-<날짜>.csv(엑셀) + form-<날짜>.html(오프라인 입력 폼)
+#   ── 비로그인·시크릿 창으로 사람이 측정 ──
+python tools/measure.py import out/example.com/audit.json <채운 CSV>
+python tools/measure.py report out/example.com/audit.json  # → summary.json + MEASURE.md
+```
+
+생성 답변은 매번 다르다. **"떴다/안 떴다"는 표본이 아니다** — 같은 날 5~10회 반복하고
+`N회 중 몇 회`로 적는다. 이 도구는 그 기록 형식을 고정한다.
+
+- **수동 입력이 기본 골격이다.** API 키가 하나도 없어도 루프는 완전히 돈다.
+  HTML 폼은 외부 자원이 없는 단일 파일이라 인터넷 없이 열리고, 입력값은 브라우저에 자동 저장된다
+- **질의는 도구가 지어내지 않는다.** `init`은 빈칸과 힌트(크롤된 섹션)만 준다.
+  한 번 고정하면 바꾸지 않는다 — 질문이 바뀌면 추이가 무의미하다
+- 집계는 엔진 × (브랜드/비브랜드) 인용률, **인용된 URL 빈도**(우리 vs 경쟁),
+  기준선 대비 추이, 그리고 **다음 재측정 예정일**(마지막 측정 +14일)
+- `measure.py auto`는 **선택**이다. `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`가 있을 때만
+  ChatGPT·Claude를 돌리고, 없으면 수동 모드를 안내하고 끝난다. 자동·수동 모두 같은 로그 형식이다.
+  **키는 환경변수에서만 읽고 어떤 파일에도 남기지 않는다** — 응답 원문도 저장하지 않는다
+- ⚠️ API 응답은 비로그인 웹 UI와 다른 표면이다. 자동은 수동을 **대체하지 않는다**
+
+---
+
 ## 구성
 
 ```
@@ -168,10 +195,12 @@ tools/                   진단·생성 도구 (의존성 0) — tools/README.md
 ├── crawl.py             전수 진단 → audit.json
 ├── report.py            audit.json → 독립 HTML 보고서
 ├── generate.py          audit.json + site.json → 배포 산출물 초안 + DEPLOY.md
-└── verify.py            배포 후 검증 · 전후 진단 비교 → verify.json + VERIFY.md
+├── verify.py            배포 후 검증 · 전후 진단 비교 → verify.json + VERIFY.md
+└── measure.py           AI 인용 측정 (수동 폼 기본 · 자동은 선택) → log.jsonl + MEASURE.md
 templates/               보고서 템플릿 (report.html) · 용어 사전 (glossary.json)
                          · site.example.json (회사 사실 입력 양식)
-tests/                   crawl.py·report.py·generate.py·verify.py 유닛 테스트 (네트워크 없음)
+                         · queries.example.json (측정 질의 세트 양식)
+tests/                   crawl·report·generate·verify·measure 유닛 테스트 (네트워크 없음)
 en/                      영문 미러 (lanes/·ops/ 동일 구조)
 ```
 

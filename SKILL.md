@@ -141,6 +141,30 @@ CS 문의에서 발굴해 목록화하고 **질문 하나 = 페이지 하나**�
   `python tools/verify.py diff out/<host>/audit.json out/after/<host>/audit.json` —
   무엇이 해소됐고 무엇이 새로 생겼는지를 findings·레인 점수·stats로 대조한다.
 
+**AI 인용은 크롤로 잴 수 없다 — 사람이 엔진에 물어야 한다.** `tools/measure.py`가 그 루프를
+같은 형식으로 굴린다. **배포 전에 기준선부터 잡아라.**
+
+```bash
+python tools/measure.py init  out/<host>/audit.json   # 질의 세트 빈칸 → 사람이 채운다
+python tools/measure.py form  out/<host>/audit.json --engines chatgpt,google_aio --runs 5
+#   → measure/form-<날짜>.csv(엑셀) + form-<날짜>.html(오프라인 폼)
+#   ── 비로그인·시크릿 창으로 사람이 측정 ──
+python tools/measure.py import out/<host>/audit.json <채운 CSV>
+python tools/measure.py report out/<host>/audit.json  # → summary.json + MEASURE.md
+```
+
+- **질의 문장은 도구가 지어내지 않는다.** `init`은 빈칸과 힌트만 낸다 — GSC 검색어·CS 문의에서
+  사람이 뽑아 적고, 한 번 고정하면 바꾸지 않는다(바꾸면 추이가 무의미하다)
+- **수동이 기본이다.** API 키가 없어도 루프는 완전히 돈다. `measure.py auto`는 선택이며
+  `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`가 있을 때만 ChatGPT·Claude를 돌린다 —
+  없으면 수동 모드를 안내하고 끝난다. 자동·수동 모두 **같은 로그 형식**에 쌓인다
+- ⚠️ API 응답은 비로그인 웹 UI와 다른 표면이다. **자동은 수동을 대체하지 않는다.**
+  Gemini·Perplexity·Google AI Overviews·네이버·다음·Copilot은 수동으로만 잰다
+- **키를 사용자에게 요구하지 마라.** 환경변수에 이미 있으면 쓰고, 없으면 수동으로 간다.
+  비용은 사용자 부담이므로 `auto`는 예상 호출 수를 세어 확인을 받는다
+- `MEASURE.md`가 재측정 예정일(마지막 측정 +14일)을 계산해 준다. **그 날짜를 보고에 옮겨 적는
+  것까지가 완료 조건이다**
+
 ## 소스 접근 불가 모드
 
 사이트 코드·서버에 접근할 수 없으면(외주 제작, CMS 권한 없음 등) **구현 대신 산출물

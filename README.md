@@ -158,6 +158,37 @@ Full check list in [`tools/README.md`](tools/README.md).
 
 ---
 
+## Citation measurement — the part a crawler cannot see
+
+```bash
+python tools/measure.py init  out/example.com/audit.json   # blank query set — a human fills it
+python tools/measure.py form  out/example.com/audit.json --engines chatgpt,google_aio --runs 5
+# → form-<date>.csv (Excel) + form-<date>.html (offline entry form)
+#   ── a human runs the queries in a signed-out private window ──
+python tools/measure.py import out/example.com/audit.json <filled CSV>
+python tools/measure.py report out/example.com/audit.json  # → summary.json + MEASURE.md
+```
+
+Generated answers differ every time. **"It showed up" is not a sample** — ask the same
+question 5-10 times on the same day and record `N out of M`. This tool pins that format down.
+
+- **Manual entry is the backbone.** The loop runs end to end with no API keys at all. The HTML
+  form is a single file with zero external resources, so it opens offline, and entries are
+  auto-saved in the browser
+- **The tool never invents a question.** `init` gives you blanks plus hints (the sections it
+  actually crawled). Once fixed, the wording never changes — change it and the trend is meaningless
+- Aggregation covers per-engine brand/non-brand citation rates, **which URLs got cited**
+  (ours vs competitors), the trend against the baseline, and **the next re-measure date**
+  (last measurement + 14 days)
+- `measure.py auto` is **optional**. It runs ChatGPT and Claude only when `OPENAI_API_KEY` /
+  `ANTHROPIC_API_KEY` are in the environment; otherwise it points you at the manual form and
+  exits cleanly. Both modes append to the same log format. **Keys are read from the environment
+  only and never written to any file** — raw responses are not stored either
+- ⚠️ The API is a different surface from the signed-out web UI. Automation does **not** replace
+  manual measurement
+
+---
+
 ## What's inside
 
 ```
@@ -178,10 +209,12 @@ tools/                   Audit and generator tooling, zero dependencies — see 
 ├── crawl.py             Full-site audit → audit.json
 ├── report.py            audit.json → self-contained HTML report
 ├── generate.py          audit.json + site.json → deployable drafts + DEPLOY.md
-└── verify.py            post-deploy verification · before/after diff → verify.json
+├── verify.py            post-deploy verification · before/after diff → verify.json
+└── measure.py           AI citation measurement (manual form first, automation optional)
 templates/               Report template (report.html), glossary.json,
-                         site.example.json (the facts you fill in)
-tests/                   Unit tests for crawl.py, report.py, generate.py, verify.py (no network)
+                         site.example.json (the facts you fill in),
+                         queries.example.json (the measurement query set)
+tests/                   Unit tests for crawl, report, generate, verify, measure (no network)
 en/                      English mirror (same lanes/ + ops/ layout)
 ```
 

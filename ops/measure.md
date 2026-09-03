@@ -95,6 +95,32 @@ done
 URL 열이 비어 있으면 만들 페이지가 없다는 뜻이고, 같은 URL이 반복되면 그 페이지가
 우리 인용 자산이라는 뜻이다. 다음 작업은 이 열을 보고 정한다.
 
+### 도구 — `tools/measure.py`
+
+이 프로토콜을 손으로 굴리지 마라. 기록 형식이 사람마다 달라지면 추이가 깨진다.
+
+```bash
+python tools/measure.py init   out/<host>/audit.json   # 질의 세트 빈칸 만들기 → 사람이 채운다
+python tools/measure.py form   out/<host>/audit.json --engines chatgpt,google_aio --runs 5
+#   → measure/form-<날짜>.csv (엑셀) + measure/form-<날짜>.html (오프라인 입력 폼)
+#   ── 여기서 사람이 비로그인·시크릿 창으로 실제 측정한다 ──
+python tools/measure.py import out/<host>/audit.json measure/form-<날짜>-filled.csv
+python tools/measure.py report out/<host>/audit.json   # → summary.json + MEASURE.md
+```
+
+- **수동 입력이 기본 골격이다.** API 키가 하나도 없어도 측정 루프는 완전히 돈다.
+  폼 상단에 위 측정 조건이 체크리스트로 박혀 있다
+- **질의는 도구가 지어내지 않는다.** `init`은 빈칸과 힌트만 준다 — 문장은 사람이 적는다.
+  한 번 고정하면 바꾸지 않는다
+- `python tools/measure.py auto ...`는 **선택 플러그인**이다. `OPENAI_API_KEY`·
+  `ANTHROPIC_API_KEY`가 환경변수에 있을 때만 ChatGPT·Claude를 자동으로 돌린다.
+  키가 없으면 "수동 모드"를 안내하고 그냥 끝난다(에러 아님).
+  자동이든 수동이든 **같은 `log.jsonl`에, 같은 형식으로** 쌓인다 (`mode` 칸으로만 구분)
+- ⚠️ **API 응답은 비로그인 웹 UI와 다른 표면이다.** 자동 측정은 수동 측정을 대체하지 않는다 —
+  추세를 싸게 자주 보는 보조 수단이다. Gemini·Perplexity·Google AI Overviews·네이버·
+  다음·Copilot은 자동화 대상이 아니다(수동 폼으로만 잰다)
+- 비용은 전부 사용자 부담이다. `auto`는 실행 전에 예상 호출 수를 세어 확인을 받는다
+
 ## 3. 재측정 일정 — 작업의 일부다
 
 - 검색 반영에는 시차가 있다. **변경 후 14일 뒤 재측정**이 기본
@@ -126,15 +152,22 @@ URL 열이 비어 있으면 만들 페이지가 없다는 뜻이고, 같은 URL�
 
 ## 6. 보고 형식
 
+`measure.py report`가 내는 `MEASURE.md`의 첫 블록이 아래 AI인용 줄과 같은 형식이다.
+검색 지표(노출·클릭·색인)는 GSC·서치어드바이저에서 사람이 채워 앞에 붙인다.
+
 ```
 [기준선] 8/1~8/28  노출 12,400 · 클릭 180 · 색인 340
-                   AI인용 브랜드 2/4 · 비브랜드 0/6 (각 10회 질의, 비로그인)
+                   AI인용 브랜드 2/4 · 비브랜드 0/6 (엔진당 각 10회 질의)
 [변경]   8/29      의도 랜딩 6종 + llms.txt + robots 3사 허용 + FAQ LD
-[재측정] 9/12 예약
 [결과]   9/12      노출 31,000(+18,600) · 클릭 610 · 색인 890
-                   AI인용 브랜드 4/4 · 비브랜드 3/6
-                   └ ChatGPT 2, Claude 1, Gemini 0 (GSC 색인 890→Gemini 대기)
+                   AI인용 브랜드 4/4 · 비브랜드 3/6 (기준선 대비 비브랜드 +3)
+                   └ ChatGPT 2, Google AI Overviews 1, Gemini 0
+[재측정] 9/26 예정 (마지막 측정 +14일)
 ```
+
+`브랜드 4/4`는 **질의 4개 중 4개가 한 번이라도 인용됐다**는 뜻이다.
+회차 합산 인용률(`ChatGPT 20/30`처럼)은 `MEASURE.md`의 엔진별 표에 따로 있다 —
+둘은 다른 숫자다. 보고에는 **둘 다** 싣는다.
 
 ## 7. 인용이 틀렸을 때 — 정정 절차
 

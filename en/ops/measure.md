@@ -104,6 +104,32 @@ Record like this — **frequency and URL on the same line**:
 An empty URL column means there is no page to cite; the same URL repeating means that page is
 a citation asset. The next task is decided by reading that column.
 
+### The tool — `tools/measure.py`
+
+Do not run this protocol by hand. Once the record format drifts between people, the trend breaks.
+
+```bash
+python tools/measure.py init   out/<host>/audit.json   # blank query set — a human fills it in
+python tools/measure.py form   out/<host>/audit.json --engines chatgpt,google_aio --runs 5
+#   → measure/form-<date>.csv (Excel) + measure/form-<date>.html (offline entry form)
+#   ── a human now measures, signed out, in a private window ──
+python tools/measure.py import out/<host>/audit.json measure/form-<date>-filled.csv
+python tools/measure.py report out/<host>/audit.json   # → summary.json + MEASURE.md
+```
+
+- **Manual entry is the backbone.** The loop runs end to end with no API keys at all.
+  The six measurement conditions above are pinned to the top of the form as a checklist
+- **The tool never invents a question.** `init` produces blanks and hints only — a human writes
+  the wording, and once fixed it does not change
+- `python tools/measure.py auto ...` is an **optional plug-in**. It runs ChatGPT and Claude only
+  when `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` are in the environment; without them it points you
+  at the manual form and exits cleanly (not an error). Automated or manual, rows land in the
+  **same `log.jsonl` in the same format** — only the `mode` column differs
+- ⚠️ **The API is a different surface from the signed-out web UI.** Automation does not replace
+  manual measurement; it is a cheap way to watch the trend more often. Gemini, Perplexity,
+  Google AI Overviews, Naver, Daum and Copilot are not automatable — measure them by hand
+- The user pays for every call. `auto` counts the expected calls and asks before spending them
+
 ## 3. The re-measure date is part of the work
 
 - Search reflection lags. **Re-measure 14 days after the change** as a default
@@ -137,15 +163,23 @@ So what the pipeline must watch is not the value but **the timestamp on it**.
 
 ## 6. Report format
 
+The first block of the `MEASURE.md` that `measure.py report` writes uses the same shape as the
+`AI cited` lines below. Search metrics (impressions, clicks, indexed) come from GSC and Search
+Advisor and a human puts them in front.
+
 ```
 [Baseline] 8/1–8/28  impressions 12,400 · clicks 180 · indexed 340
-                     AI cited: brand 2/4 · non-brand 0/6 (10 runs each, logged out)
+                     AI cited: brand 2/4 · non-brand 0/6 (10 runs each per engine)
 [Change]   8/29      6 intent landings + llms.txt + robots for all vendors + FAQ LD
-[Scheduled] 9/12
 [Result]   9/12      impressions 31,000 (+18,600) · clicks 610 · indexed 890
-                     AI cited: brand 4/4 · non-brand 3/6
-                     └ ChatGPT 2, Claude 1, Gemini 0 (indexed 890 → Gemini pending)
+                     AI cited: brand 4/4 · non-brand 3/6 (non-brand +3 vs baseline)
+                     └ ChatGPT 2, Google AI Overviews 1, Gemini 0
+[Next]     9/26      scheduled (last measurement + 14 days)
 ```
+
+`brand 4/4` means **4 of the 4 brand queries were cited at least once**. The run-summed rate
+(`ChatGPT 20/30`) lives in the per-engine table of `MEASURE.md` — they are different numbers.
+Report **both**.
 
 ## 7. When the citation is wrong — the correction procedure
 

@@ -9,6 +9,7 @@
 | `report.py` | 진단 결과 → 보고서 | `audit.json` | `report.html` |
 | `generate.py` | 진단 결과 → 배포 산출물 초안 | `audit.json` (+ `site.json`) | `out/<host>/deploy/` + `DEPLOY.md` |
 | `verify.py` | 배포가 실제로 서빙되는지 / 전후 비교 | `audit.json` (+ `deploy/`) | `verify.json` + `VERIFY.md` |
+| `measure.py` | AI 인용 측정 루프 | `audit.json` + `queries.json` | `log.jsonl` → `summary.json` + `MEASURE.md` |
 | `test_audit.sh` | audit.sh 회귀 테스트 | — | PASS/FAIL |
 
 흐름:
@@ -17,6 +18,10 @@
 crawl.py → report.py(사람에게 보고) → generate.py(고칠 파일 초안)
         → [사람이 배포] → verify.py deploy(크롤러의 눈으로 증명)
         → (14일) crawl.py 재크롤 → verify.py diff(무엇이 해소됐나)
+
+measure.py는 이 흐름과 나란히, 배포 전 기준선부터 돈다:
+measure.py init → [사람이 질의 확정] → form → [사람이 측정] → import → report
+                                                          ↑ (14일) 반복
 ```
 
 ## audit.sh — 빠른 1페이지 진단
@@ -225,9 +230,110 @@ python tools/verify.py diff out/example.com/audit.json out/after/example.com/aud
 
 `VERIFY.md`는 같은 내용의 사람용 요약이다 — ❌를 먼저 싣고 항목마다 다음 조치를 한 줄 붙인다.
 
+## measure.py — AI 인용 측정
+
+```bash
+python tools/measure.py init   out/example.com/audit.json
+python tools/measure.py form   out/example.com/audit.json --engines chatgpt,google_aio --runs 5
+python tools/measure.py import out/example.com/audit.json out/example.com/measure/form-2026-09-15-filled.csv
+python tools/measure.py report out/example.com/audit.json --since 2026-09-01
+python tools/measure.py auto   out/example.com/audit.json --engines chatgpt,claude --runs 5
+```
+
+**크롤로는 AI 인용을 잴 수 없다.** 엔진에 실제로 물어야 하고, 그 답은 매번 다르다 —
+그래서 "떴다/안 떴다"가 아니라 **N회 중 몇 회**로 적는다 (`ops/measure.md` 2번).
+
+| 서브커맨드 | 무엇 | 출력 |
+|---|---|---|
+| `init` | `measure/` 폴더 + 질의 세트 **빈칸** 생성 (이미 있으면 안 건드림) | `measure/queries.json` |
+| `form` | 질의 × 엔진 × 회차 행이 미리 채워진 수동 입력 양식 | `form-<날짜>.csv` · `form-<날짜>.html` |
+| `import` | 채운 CSV를 검증해 로그에 append (문제 행은 건너뛰고 사유 출력) | `measure/log.jsonl` |
+| `report` | 로그 집계 — 엔진별 인용률·인용 URL 빈도·추이·재측정일 | `summary.json` + `MEASURE.md` |
+| `auto` | **선택.** 환경변수에 키가 있을 때만 ChatGPT·Claude 자동 질의 | `log.jsonl`에 append |
+
+옵션: `--engines`(쉼표 구분, 기본 `chatgpt,google_aio`) · `--runs`(기본 5) ·
+`--date YYYY-MM-DD`(기본 오늘) · `--since`(report) · `--delay`·`--yes`(auto).
+
+### 수동이 기본 골격이다
+
+API 키가 하나도 없어도 측정 루프는 완전히 돈다. 자동화는 붙였다 뗐다 하는 플러그인이고,
+**자동이든 수동이든 같은 `log.jsonl`에 같은 형식으로 쌓인다** (`mode` 칸으로만 구분).
+
+- `form-<날짜>.csv` — 엑셀용. **UTF-8 BOM**을 붙여 한글이 깨지지 않는다.
+  입력 열(`cited`·`cited_urls`·`brand_mentioned`·`competitor_domains`·`note`)만 비어 있다
+- `form-<날짜>.html` — **오프라인 단일 파일 폼**. 외부 자원이 하나도 없어 인터넷 없이 열린다.
+  상단에 측정 규칙 6가지 체크리스트, 질의별 표(라디오 Y/N·URL·경쟁 도메인·메모), 진행률,
+  하단 "CSV로 내보내기"(내려받기가 막히면 textarea로 떨어져 복사 가능).
+  입력값은 `localStorage`에 자동 저장된다 — 브라우저를 닫아도 남지만
+  **저장 실패해도 입력은 계속된다**(try/catch)
+
+### 계약
+
+```
+out/<host>/measure/queries.json   su-multi-geo/queries/1
+  {"queries":[{"id":"Q01","text":"...","type":"brand|nonbrand","note":""}]}
+
+out/<host>/measure/log.jsonl      su-multi-geo/measure-row/1  · append-only · 한 줄 = 질의 1회
+  {"date":"2026-09-15","query_id":"Q01","engine":"chatgpt","run_no":1,
+   "mode":"manual|api","signed_out":true|false|null,"cited":true,
+   "cited_urls":["https://example.com/pricing"],"brand_mentioned":true,
+   "competitor_domains":["competitor.com"],"note":"","recorded_at":"ISO8601"}
+
+out/<host>/measure/summary.json   su-multi-geo/measure/1   · report가 생성
+```
+
+`engine`은 고정 목록이다: `chatgpt` `google_aio` `gemini` `claude` `perplexity`
+`naver_ai` `daum` `copilot` `other`. 값이 늘면 스키마 버전을 올린다.
+
+로그는 **append-only**다 — 고치지 말고 다시 넣어라. 같은 `date+query_id+engine+run_no`가
+여러 번 들어오면 **읽을 때 마지막 것만** 쓴다.
+
+### import가 걸러내는 것
+
+날짜가 `YYYY-MM-DD`가 아닌 행 · `queries.json`에 없는 `query_id` · 고정 목록 밖의 `engine` ·
+1 미만인 `run_no` · `cited`가 비었거나 Y/N이 아닌 행. **건너뛰고 사유를 출력한다.**
+`brand_mentioned`가 비면 `cited` 값을 따르고, URL이 아닌 토큰은 버리되 `note`에 남긴다.
+`cited=Y`인데 URL이 없으면 `[인용 URL 미기록]`으로 표시된다 — 다음 작업을 정할 수 없다는 신호다.
+
+### report가 내는 것
+
+- **엔진 × (브랜드/비브랜드) 인용률** `N/M` — 회차 합산
+- **인용 URL 빈도** — 우리 호스트 vs 경쟁 도메인, 질의별로 어느 URL이 뽑히는지
+- **날짜별 추이** — 첫 측정일이 기준선, 이후는 기준선 대비 증감
+- `ops/measure.md` 6번과 같은 형식의 한 줄 요약과 **다음 재측정 예정일**(마지막 측정 +14일)
+
+`브랜드 4/4`(질의 단위: 한 번이라도 인용된 질의 수)와 `ChatGPT 20/30`(회차 합산)은
+**다른 숫자다.** 둘 다 낸다.
+
+### auto — 선택이고, 대체가 아니다
+
+`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`가 **환경변수에 있을 때만** 해당 엔진을 돌린다.
+없으면 "수동 모드 — form을 쓰라"고 안내하고 **정상 종료한다(에러 아님)**.
+Gemini·Perplexity·Google AI Overviews·네이버·다음·Copilot은 자동화 대상이 아니다 —
+수동 폼으로 안내한다.
+
+- OpenAI Responses API(`/v1/responses` + `tools:[{"type":"web_search"}]`)의 `url_citation`
+  주석에서, Anthropic Messages API(`/v1/messages` + 서버 도구 `web_search_20250305`)의
+  text 블록 `citations`에서 URL을 뽑는다. **검색 결과 전체가 아니라 실제 인용만 센다**
+- `urllib`만 쓴다 (SDK 의존 없음). HTTP 전송 함수는 주입 가능하다 — 테스트는 가짜 응답으로 돈다
+- ⚠️ **모델명은 각사 문서에서 현재 값을 확인하라.** 코드 상수는 출발점일 뿐이고,
+  `OPENAI_MODEL` / `ANTHROPIC_MODEL` 환경변수로 덮어쓴다
+- ⚠️ **API 응답은 비로그인 웹 UI와 다른 표면이다.** 자동 측정은 수동 측정을 대체하지 않는다 —
+  추세를 싸게 자주 보는 보조 수단으로만 써라
+
+### 안전선 — 키와 비용
+
+- **키는 환경변수에서만 읽는다.** `queries.json`·`log.jsonl`·`summary.json`·폼 어디에도
+  쓰지 않고, 콘솔에도 찍지 않는다. 없는 키를 사용자에게 요구하지도 않는다
+- **응답 원문을 저장하지 않는다.** 남기는 것은 인용 URL·브랜드 언급 여부·모델명뿐이다
+- HTTP 오류는 상태 코드만 `note`에 남기고 본문은 버린다 (본문에 키가 실릴 이유는 없지만 안 받는다)
+- **비용은 전부 사용자 부담이다.** 실행 전에 예상 호출 수(엔진 × 질의 × 회차)를 세어
+  출력하고, `--yes`가 없으면 확인을 받는다. 회차 사이에 `--delay`(기본 2초)를 지킨다
+- 실패한 회차는 버리지 않고 `note`에 사유를 적어 기록한다 — 표본에서 빠지면 분포가 왜곡된다
+
 ## 테스트
 
 ```bash
 bash tools/test_audit.sh          # audit.sh
-python -m unittest discover tests # crawl.py + report.py + generate.py + verify.py (네트워크 없음)
+python -m unittest discover tests # crawl·report·generate·verify·measure (네트워크 없음)
 ```
