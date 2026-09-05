@@ -4,8 +4,9 @@ Where GEO addresses **AI that browses**, LLMO plants your brand in **the model's
 The question is whether the model knows you when a user asks "recommend a service like X"
 without searching at all.
 
-Effects accumulate slowly, on **training cycles**. In exchange, once embedded it becomes a moat
-an agency cannot imitate. **Measure it quarterly** — do not put it in the 14-day loop.
+Timing varies by model, training data, and product updates and cannot be predicted. Record answers
+quarterly under the same browsing-off conditions without attributing a change to one publication
+or crawler-policy change by default.
 
 ## 1. Lock the name to one spelling
 
@@ -29,8 +30,9 @@ descriptions there.
 - [ ] Developer communities and technical blogs: the record of how it was built becomes the
       brand description
 - [ ] News and press: one release replicates across dozens of outlets and recurs in the corpus
-- [ ] **The training crawlers must be open** — blocking `GPTBot`, `ClaudeBot`, and
-      `Google-Extended` closes this entire lane (`crawlers.md`)
+- [ ] Set training-crawler policy according to business goals and content rights. Allowing access
+      does not guarantee future training or recall; blocking one bot does not erase existing model
+      knowledge or every other data route
 
 ## 3. Keeping it from drifting
 
@@ -49,5 +51,5 @@ Ask the major models (ChatGPT, Claude, Gemini) **with browsing turned off**: "Wh
 | Knows it wrongly | Stale or fragmented description | §1 consistency + §3 refresh |
 | Knows it correctly | Healthy | Maintain |
 
-Record the raw answers and compare quarter over quarter. That change is the only evidence
-this lane produces.
+Record the raw answers with model/version, language, locale, and browsing-off state. A change is
+an observation for those conditions, not direct proof of training inclusion or causation.

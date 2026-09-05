@@ -7,15 +7,15 @@ The lane that makes generative AI cite you as a **primary source**. Because engi
 
 | Engine | Index source | Decisive control point | Log-observable |
 |---|---|---|---|
-| **ChatGPT** | Own crawlers + **leans on Bing index** | Bing WMT registration + allow OAI-SearchBot | ✅ |
-| **Gemini** | **Google index (Googlebot)** | GSC indexing + allow Google-Extended | ❌ impossible |
+| **ChatGPT** | Search/user-request crawlers and search providers | OAI-SearchBot access + observed sources | Partly |
+| **Gemini** | Google Search and product-specific grounding | Googlebot access/indexing + observed sources | Google-Extended is not logged |
 | **Claude** | Own crawler (Claude-SearchBot) | Allow all three robots.txt agents | ✅ |
 | **Perplexity** | Own crawler | Allow PerplexityBot | ✅ |
 
 **How to read it:**
-- ChatGPT not showing up → check the **Bing index first**. Most sites watch GSC and forget Bing
-- Gemini not showing up → check the **GSC indexed-page count**. If Googlebot cannot crawl it, it is over
-- Claude/Perplexity not showing up → check robots.txt and SSR
+- ChatGPT not showing up → check OAI-SearchBot access, major search indexes, and observed sources
+- Gemini not showing up → check Googlebot access and GSC indexing
+- Claude/Perplexity not showing up → check role-specific robots policy, responses, and sources
 
 ## 1. Shared — llms.txt
 
@@ -35,7 +35,8 @@ A markdown site guide for AI at `/llms.txt`:
 - Attribute citations to: example.com
 ```
 
-- [ ] `/llms.txt`, plus `/llms-full.txt` (full core data) if you can
+- [ ] Use `/llms.txt` as a low-cost supplementary guide when useful. Add `/llms-full.txt` only
+      when its consumer and maintenance purpose are clear
 - [ ] Carry trust signals: source, update cadence, what you originate
 - [ ] Serving it from an app route is fine — keeps it current
 
@@ -44,8 +45,8 @@ The cost is low so do it, but do not expect citations from this alone. The body 
 
 ## 2. Shared — crawler access
 
-Read `crawlers.md` and settle robots.txt. **This is priority zero.**
-If access is blocked, nothing below arrives.
+Read `crawlers.md` and set policy by crawler purpose. Blocking one bot limits that bot's direct
+access; it does not prove that every search index, crawler, or user-request route is unavailable.
 
 ## 3. Shared — becoming the primary source (the real work)
 
@@ -86,20 +87,21 @@ lose them both.
 
 ## 4. Per-engine — ChatGPT
 
-- [ ] **Register with Bing Webmaster Tools** (one-click import from GSC, ~10 minutes).
-      ChatGPT search leans heavily on the **Bing index** on top of its own crawlers.
-      Not registered = half the lane abandoned
+- [ ] Use **Bing Webmaster Tools** as a discovery and diagnostics channel. ChatGPT's source
+      selection can change, so registration alone does not guarantee visibility or citation
 - [ ] Wire up IndexNow (Bing consumes it directly) to accelerate new pages
 - [ ] Actually run `site:yourdomain` **on Bing** to confirm indexing
 - [ ] robots: allow `GPTBot`, `OAI-SearchBot`, `ChatGPT-User`
 
 ## 5. Per-engine — Gemini ★ structurally different
 
-Gemini has **no crawler of its own.** It sits on top of Googlebot's index.
+Gemini search-grounded answers can use Google Search and grounding infrastructure. Behavior can
+vary by product and mode, so observe the sources returned by the actual surface.
 
-- [ ] **Check the GSC indexed-page count first.** If pages are not indexed, Gemini work is moot —
+- [ ] **Check GSC indexing first.** It is an important prerequisite for Google Search-based surfaces —
       go do the SSR and sitemap items in `seo.md`
-- [ ] `Google-Extended: Allow` — the Gemini grounding switch. Absent means unset policy
+- [ ] `Google-Extended` separately controls Gemini training and some grounding uses. It is not
+      required for Google Search inclusion or ranking; apply the documented product scope
 - [ ] AI Overviews and Gemini are separate surfaces. AI Overviews belongs to `aeo.md`
 - [ ] ⚠️ **Measurement differs** — invisible in logs, so direct querying is the only way → `measure.md`
 
@@ -117,6 +119,6 @@ Actually ask each engine and check whether your domain appears in the sources.
 If not, check in order:
 
 1. Is the crawler allowed (robots.txt)?
-2. Does the page render server-side (curl)?
-3. Is it in that engine's index source (ChatGPT → Bing, Gemini → GSC)?
+2. Are the raw HTML and any required rendered result accessible?
+3. Is it observed in relevant search indexes and the answer's actual sources?
 4. Does a competing primary source already own it? If so, differentiate what you originate

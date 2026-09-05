@@ -44,9 +44,9 @@ class TestRobotsPolicy(unittest.TestCase):
         self.assertEqual(crawl.robots_policy(raw, "GPTBot"), "explicit-allow")
         self.assertEqual(crawl.robots_policy(raw, "ClaudeBot"), "star-block")
 
-    def test_first_rule_in_group_wins(self):
+    def test_allow_wins_equal_specificity(self):
         raw = "User-agent: GPTBot\nDisallow: /\nAllow: /\n"
-        self.assertEqual(crawl.robots_policy(raw, "GPTBot"), "explicit-block")
+        self.assertEqual(crawl.robots_policy(raw, "GPTBot"), "explicit-allow")
 
     def test_sitemap_line_does_not_split_group(self):
         raw = "User-agent: GPTBot\nSitemap: https://example.com/sitemap.xml\nDisallow: /\n"
@@ -83,6 +83,12 @@ class TestSitemapCandidates(unittest.TestCase):
     def test_same_host_declaration_is_fetched(self):
         got = crawl.sitemap_candidates(self.BASE, self.HOST, ["https://example.com/sitemap.xml"])
         self.assertIn("https://example.com/sitemap.xml", got)
+
+    def test_all_same_host_declarations_are_kept(self):
+        declared = ["https://example.com/sitemap-%d.xml" % i for i in range(5)]
+        got = crawl.sitemap_candidates(self.BASE, self.HOST, declared)
+        for url in declared:
+            self.assertIn(url, got)
 
     def test_foreign_and_nonurl_declarations_are_dropped(self):
         got = crawl.sitemap_candidates(self.BASE, self.HOST, [
@@ -177,8 +183,8 @@ class TestScriptDetection(unittest.TestCase):
 
 
 class TestNormalize(unittest.TestCase):
-    def test_query_and_fragment_dropped(self):
-        self.assertEqual(crawl.normalize("https://EXAMPLE.com/a?b=1#c"), "https://example.com/a")
+    def test_query_preserved_and_fragment_dropped(self):
+        self.assertEqual(crawl.normalize("https://EXAMPLE.com/a?b=1#c"), "https://example.com/a?b=1")
 
     def test_empty_path_becomes_root(self):
         self.assertEqual(crawl.normalize("https://example.com"), "https://example.com/")
@@ -280,8 +286,8 @@ class TestFindings(unittest.TestCase):
         for code in ("JSONLD_MISSING", "FAQ_MISSING", "ORG_JSONLD_MISSING",
                      "CANONICAL_MISSING", "H1_MISSING", "DESC_MISSING", "THIN_TEXT"):
             self.assertIn(code, codes(findings))
-        self.assertEqual(board["AEO"]["status"], "bad")
-        self.assertEqual(board["LLMO"]["status"], "warn")
+        self.assertEqual(board["AEO"]["status"], "ok")
+        self.assertEqual(board["LLMO"]["status"], "ok")
 
     def test_canonical_not_self(self):
         pages = [page("https://example.com/a", canonical="https://example.com/other")]
@@ -290,8 +296,8 @@ class TestFindings(unittest.TestCase):
 
     def test_ai_crawler_blocked_and_partial(self):
         policies = {ua: "star-allow" for ua in crawl.ALL_UAS}
-        policies["GPTBot"] = "explicit-block"
-        policies["ClaudeBot"] = "star-partial"
+        policies["OAI-SearchBot"] = "explicit-block"
+        policies["Claude-SearchBot"] = "star-partial"
         policies["Yeti"] = "explicit-block"
         s = site()
         s["robots"]["policies"] = policies

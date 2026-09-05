@@ -306,6 +306,7 @@ class TestJsonLd(DeployBase):
         product = {"@context": "https://schema.org", "@type": "Product",
                    "name": "표준 요금제", "url": FAQ,
                    "offers": {"@type": "Offer", "price": "89000", "priceCurrency": "KRW"}}
+        os.remove(os.path.join(self.dir, "jsonld", "faq.faq.json"))
         self.write("jsonld/faq.product.json", json.dumps(product, ensure_ascii=False))
         served = html(title="요금", body="표준 요금제 89,000원",
                       head=ld_script(product), canonical=FAQ)
@@ -353,9 +354,9 @@ class TestMeta(DeployBase):
         check = self.check_of(self.run_verify(), "meta.applied")
         self.assertEqual(check["evidence"]["description_changed"], 1)
 
-    def test_unchanged_warns(self):
+    def test_already_matching_draft_passes(self):
         self.rows(current_title="자주 묻는 질문 | 예시 주식회사")
-        self.assertEqual(self.status_of(self.run_verify(), "meta.applied"), "warn")
+        self.assertEqual(self.status_of(self.run_verify(), "meta.applied"), "pass")
 
     def test_duplicate_titles_remaining(self):
         self.rows()

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import re
@@ -44,9 +45,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import crawl  # noqa: E402  (host_of — 호스트 판정을 복제하지 않는다)
 
-SCHEMA_QUERIES = "su-multi-geo/queries/1"
-SCHEMA_ROW = "su-multi-geo/measure-row/1"
-SCHEMA_SUMMARY = "su-multi-geo/measure/1"
+SCHEMA_QUERIES = "su-multi-geo/queries/2"
+LEGACY_QUERIES_SCHEMAS = ("su-multi-geo/queries/1",)
+SCHEMA_ROW = "su-multi-geo/measure-row/2"
+LEGACY_ROW_SCHEMAS = ("su-multi-geo/measure-row/1",)
+SCHEMA_SUMMARY = "su-multi-geo/measure/2"
 AUDIT_SCHEMA_PREFIX = "su-multi-geo/audit/"
 
 # 엔진 고정 목록 — 값이 늘면 스키마 버전을 올린다
@@ -76,6 +79,7 @@ DEFAULT_RUNS = 5
 MIN_RUNS_WARN = 5
 
 CSV_FIELDS = ["date", "query_id", "query_text", "type", "engine", "run_no",
+              "surface", "locale", "login_state", "search_enabled", "campaign_id",
               "cited", "cited_urls", "brand_mentioned", "competitor_domains", "note"]
 
 # ⚠️ 모델명은 각사 사정으로 바뀐다. 여기 값은 출발점일 뿐이다 —
@@ -195,6 +199,19 @@ def write_json(path: str, obj) -> None:
         fh.write("\n")
 
 
+def stable_hash(value: str) -> str:
+    return hashlib.sha256(str(value or "").strip().encode("utf-8")).hexdigest()
+
+
+def query_fingerprint(query: dict) -> str:
+    """ID와 무관한 불변 질의 계약. 문장 또는 유형이 바뀌면 cohort도 바뀐다."""
+    return stable_hash("%s\n%s" % (query.get("type", ""), query.get("text", "")))
+
+
+def query_set_fingerprint(queries: list) -> str:
+    return stable_hash("\n".join(sorted(query_fingerprint(q) for q in queries)))
+
+
 def measure_dir(audit_path: str) -> str:
     return os.path.join(os.path.dirname(os.path.abspath(audit_path)), "measure")
 
@@ -218,7 +235,12 @@ def load_queries(mdir: str) -> list:
     if not os.path.exists(path):
         return []
     doc = load_json(path)
-    items = doc.get("queries") if isinstance(doc, dict) else doc
+    if not isinstance(doc, dict):
+        raise ValueError("queries.json은 schema가 있는 JSON 객체여야 한다")
+    schema = doc.get("schema")
+    if schema not in (SCHEMA_QUERIES,) + LEGACY_QUERIES_SCHEMAS:
+        raise ValueError("지원하지 않는 queries schema: %r" % schema)
+    items = doc.get("queries")
     out = []
     seen = set()
     for item in items or []:
@@ -228,8 +250,11 @@ def load_queries(mdir: str) -> list:
         if not qid or qid in seen or qtype not in TYPES:
             continue
         seen.add(qid)
+        if not text:
+            continue
         out.append({"id": qid, "text": text, "type": qtype,
-                    "note": str(item.get("note") or "")})
+                    "note": str(item.get("note") or ""),
+                    "fingerprint": query_fingerprint({"text": text, "type": qtype})})
     return out
 
 
@@ -240,11 +265,20 @@ def queries_todo(queries: list) -> list:
 # ─────────────────────────────────────────────────────────── 로그 (append-only)
 
 def row_key(row: dict) -> tuple:
-    return (row.get("date"), row.get("query_id"), row.get("engine"), row.get("run_no"))
+    # v1의 네 필드 키를 확장한다. 수동 UI와 API, 서로 다른 locale/검색 조건은 별도 관측이다.
+    return (row.get("date"), row.get("query_id"), row.get("engine"), row.get("run_no"),
+            row.get("mode") or "manual", row.get("surface") or row.get("engine"),
+            row.get("locale") or "", row.get("login_state") or
+            ("signed_out" if row.get("signed_out") is True else ""),
+            str(row.get("search_enabled") if row.get("search_enabled") is not None else ""),
+            row.get("campaign_id") or "")
 
 
 def make_row(date_str, query_id, engine, run_no, mode, signed_out, cited,
-             cited_urls, brand_mentioned, competitor_domains, note="") -> dict:
+             cited_urls, brand_mentioned, competitor_domains, note="", *, outcome=None,
+             error=None, surface=None, locale="", login_state=None, search_enabled=None,
+             campaign_id="", query_fingerprint_value="", model="") -> dict:
+    outcome = outcome or ("observed" if cited is not None else ("error" if error else "unmeasured"))
     return OrderedDict([
         ("schema", SCHEMA_ROW),
         ("date", date_str),
@@ -252,8 +286,18 @@ def make_row(date_str, query_id, engine, run_no, mode, signed_out, cited,
         ("engine", engine),
         ("run_no", int(run_no)),
         ("mode", mode),
+        ("surface", surface or ("api" if mode == "api" else engine)),
+        ("locale", locale or ""),
+        ("login_state", login_state or ("signed_out" if signed_out is True else
+                                          "signed_in" if signed_out is False else "unknown")),
+        ("search_enabled", search_enabled),
+        ("campaign_id", campaign_id or ""),
+        ("query_fingerprint", query_fingerprint_value or ""),
+        ("model", model or ""),
         ("signed_out", signed_out),
-        ("cited", bool(cited)),
+        ("outcome", outcome),
+        ("error", error or None),
+        ("cited", bool(cited) if outcome == "observed" else None),
         ("cited_urls", list(cited_urls or [])),
         ("brand_mentioned", bool(brand_mentioned)),
         ("competitor_domains", list(competitor_domains or [])),
@@ -286,6 +330,13 @@ def load_log(path: str) -> list:
             except ValueError:
                 continue
             if not isinstance(row, dict) or not row.get("date"):
+                continue
+            if row.get("schema") not in (SCHEMA_ROW,) + LEGACY_ROW_SCHEMAS:
+                continue
+            if row.get("engine") not in ENGINES:
+                continue
+            if row.get("schema") == SCHEMA_ROW and row.get("outcome") not in (
+                    "observed", "error", "unmeasured"):
                 continue
             latest[row_key(row)] = row
     return list(latest.values())
@@ -366,7 +417,8 @@ def pick_engines(raw) -> tuple:
 def plan_rows(queries: list, engines: list, runs: int, date_str: str) -> list:
     """질의 × 엔진 × 회차 — 폼에 미리 채워지는 행."""
     return [{"date": date_str, "query_id": q["id"], "query_text": q["text"],
-             "type": q["type"], "engine": e, "run_no": n}
+             "type": q["type"], "engine": e, "run_no": n, "surface": e + "_web_ui",
+             "login_state": "signed_out", "search_enabled": "Y"}
             for q in queries for e in engines for n in range(1, runs + 1)]
 
 
@@ -526,7 +578,8 @@ function csv() {
   keys.forEach(function (r) {
     var c = cell(r.k, "cited");
     if (!c) { return; }
-    out.push([DATA.date, r.qid, r.text, r.type, r.engine, r.run, c,
+    out.push([DATA.date, r.qid, r.text, r.type, r.engine, r.run, r.engine + "_web_ui",
+      "", "signed_out", "Y", "", c,
       cell(r.k, "urls"), cell(r.k, "brand") || c, cell(r.k, "comp"), cell(r.k, "note")]
       .map(function (v) {
         v = String(v == null ? "" : v);
@@ -709,6 +762,10 @@ def _parse_csv_row(raw: dict, qindex: dict, host: str):
     qid = get("query_id")
     if qid not in qindex:
         return None, "queries.json에 없는 query_id: %r" % qid
+    if get("query_text") and get("query_text") != qindex[qid]["text"]:
+        return None, "query_text가 현재 queries.json과 다르다 (낡은 폼): %r" % qid
+    if get("type") and get("type").lower() != qindex[qid]["type"]:
+        return None, "type이 현재 queries.json과 다르다: %r" % qid
 
     engine = get("engine").lower()
     if engine not in ENGINES:
@@ -745,8 +802,18 @@ def _parse_csv_row(raw: dict, qindex: dict, host: str):
     if cited and not urls:
         note = (note + " " if note else "") + "[인용 URL 미기록]"
 
-    return make_row(date_str, qid, engine, run_no, "manual", True, cited,
-                    urls, mentioned, comps, note), None
+    login_state = get("login_state") or "signed_out"
+    if login_state not in ("signed_out", "signed_in", "unknown"):
+        return None, "login_state가 signed_out/signed_in/unknown이 아니다: %r" % login_state
+    search_enabled = yn(get("search_enabled"))
+    if get("search_enabled") and search_enabled is None:
+        return None, "search_enabled가 Y/N이 아니다: %r" % get("search_enabled")
+    query = qindex[qid]
+    return make_row(date_str, qid, engine, run_no, "manual", login_state == "signed_out", cited,
+                    urls, mentioned, comps, note, surface=get("surface") or engine,
+                    locale=get("locale"), login_state=login_state,
+                    search_enabled=search_enabled, campaign_id=get("campaign_id"),
+                    query_fingerprint_value=query_fingerprint(query)), None
 
 
 def cmd_import(args) -> int:
@@ -785,22 +852,34 @@ def cmd_import(args) -> int:
 # ─────────────────────────────────────────────────────────── report
 
 def _blank():
-    return {"runs": 0, "cited": 0, "mentioned": 0, "queries": 0, "queries_cited": 0}
+    return {"runs": 0, "cited": 0, "mentioned": 0, "queries": 0, "queries_cited": 0,
+            "errors": 0, "unmeasured": 0, "attempts": 0}
 
 
 def _rate(part, whole):
     return round(part / whole, 4) if whole else None
 
 
-def aggregate(rows: list, queries: list, host: str, base: str, since=None) -> dict:
+def aggregate(rows: list, queries: list, host: str, base: str, since=None, until=None,
+              cumulative=True) -> dict:
     qindex = {q["id"]: q for q in queries}
     rows = [r for r in rows if r.get("query_id") in qindex]
     if since:
         rows = [r for r in rows if r.get("date", "") >= since]
+    if until:
+        rows = [r for r in rows if r.get("date", "") <= until]
+    # v2 행은 질의 문장/유형 fingerprint가 맞아야 같은 cohort다. v1은 명시적 legacy로 읽는다.
+    incompatible = [r for r in rows if r.get("schema") == SCHEMA_ROW and
+                    r.get("query_fingerprint") and
+                    r.get("query_fingerprint") != query_fingerprint(qindex[r["query_id"]])]
+    rows = [r for r in rows if r not in incompatible]
     rows.sort(key=lambda r: (r.get("date", ""), r.get("query_id", ""),
                              r.get("engine", ""), r.get("run_no", 0)))
 
     dates = sorted({r["date"] for r in rows})
+    trend_rows = list(rows)
+    if not cumulative and dates:
+        rows = [r for r in rows if r["date"] == dates[-1]]
     engines_seen = [e for e in ENGINES if any(r["engine"] == e for r in rows)]
 
     # 엔진 × 유형 — 회차 합산
@@ -818,10 +897,15 @@ def aggregate(rows: list, queries: list, host: str, base: str, since=None) -> di
     for row in rows:
         qtype = qindex[row["query_id"]]["type"]
         slot = per_engine[row["engine"]][qtype]
+        outcome = row.get("outcome") or "observed"  # v1 rows are observed
+        slot["attempts"] += 1
+        modes[row.get("mode") or "manual"] += 1
+        if outcome != "observed":
+            slot["errors" if outcome == "error" else "unmeasured"] += 1
+            continue
         slot["runs"] += 1
         slot["cited"] += 1 if row.get("cited") else 0
         slot["mentioned"] += 1 if row.get("brand_mentioned") else 0
-        modes[row.get("mode") or "manual"] += 1
 
         key = (row["date"], row["query_id"])
         q_cited[key] = q_cited.get(key, False) or bool(row.get("cited"))
@@ -864,16 +948,60 @@ def aggregate(rows: list, queries: list, host: str, base: str, since=None) -> di
             item[qtype] = slot
         engine_out.append(item)
 
+    # 수동 웹 UI와 API는 서로 다른 제품 표면이다. 엔진 합산 외에 비교 가능한 cohort를 분리한다.
+    cohort_map = OrderedDict()
+    for row in rows:
+        key = (row.get("engine"), row.get("mode") or "manual",
+               row.get("surface") or row.get("engine"), row.get("locale") or "",
+               row.get("login_state") or ("signed_out" if row.get("signed_out") is True else "unknown"),
+               row.get("search_enabled"), row.get("model") or "", row.get("campaign_id") or "")
+        cohort = cohort_map.setdefault(key, {"engine": key[0], "mode": key[1], "surface": key[2],
+                                             "locale": key[3], "login_state": key[4],
+                                             "search_enabled": key[5], "model": key[6],
+                                             "campaign_id": key[7], "brand": _blank(),
+                                             "nonbrand": _blank(), "_queries": {}})
+        slot = cohort[qindex[row["query_id"]]["type"]]
+        slot["attempts"] += 1
+        outcome = row.get("outcome") or "observed"
+        qslot = cohort["_queries"].setdefault(row["query_id"], {
+            "id": row["query_id"], "fingerprint": query_fingerprint(qindex[row["query_id"]]),
+            "attempts": 0, "observed": 0, "errors": 0, "unmeasured": 0})
+        qslot["attempts"] += 1
+        if outcome == "error":
+            slot["errors"] += 1
+            qslot["errors"] += 1
+        elif outcome == "unmeasured":
+            slot["unmeasured"] += 1
+            qslot["unmeasured"] += 1
+        else:
+            slot["runs"] += 1
+            qslot["observed"] += 1
+            slot["cited"] += int(bool(row.get("cited")))
+            slot["mentioned"] += int(bool(row.get("brand_mentioned")))
+    cohorts = []
+    for cohort in cohort_map.values():
+        for qtype in TYPES:
+            cohort[qtype]["rate"] = _rate(cohort[qtype]["cited"], cohort[qtype]["runs"])
+            cohort[qtype]["error_rate"] = _rate(cohort[qtype]["errors"], cohort[qtype]["attempts"])
+        cohort["label"] = ("%s API (%s)" % (ENGINES[cohort["engine"]], cohort["model"] or "model 미기록")
+                           if cohort["mode"] == "api" else
+                           "%s 웹 UI" % ENGINES[cohort["engine"]])
+        cohort["queries"] = sorted(cohort.pop("_queries").values(), key=lambda q: q["id"])
+        cohorts.append(cohort)
+
     trend = []
     for day in dates:
-        day_rows = [r for r in rows if r["date"] == day]
-        entry = {"date": day, "runs": len(day_rows),
+        day_attempts = [r for r in trend_rows if r["date"] == day]
+        day_rows = [r for r in day_attempts if (r.get("outcome") or "observed") == "observed"]
+        entry = {"date": day, "runs": len(day_rows), "attempts": len(day_attempts),
+                 "errors": sum(1 for r in day_attempts if r.get("outcome") == "error"),
+                 "unmeasured": sum(1 for r in day_attempts if r.get("outcome") == "unmeasured"),
                  "cited": sum(1 for r in day_rows if r.get("cited")),
                  "engines": {}}
         for qtype in TYPES:
             ids = {q["id"] for q in queries if q["type"] == qtype}
-            measured = {qid for (d, qid) in q_cited if d == day and qid in ids}
-            hit = {qid for (d, qid), v in q_cited.items() if v and d == day and qid in ids}
+            measured = {r["query_id"] for r in day_rows if r["query_id"] in ids}
+            hit = {r["query_id"] for r in day_rows if r["query_id"] in ids and r.get("cited")}
             entry[qtype] = {"queries": len(measured), "queries_cited": len(hit)}
         for engine in engines_seen:
             eng_rows = [r for r in day_rows if r["engine"] == engine]
@@ -895,26 +1023,53 @@ def aggregate(rows: list, queries: list, host: str, base: str, since=None) -> di
         if last:
             next_measure = (last + timedelta(days=REMEASURE_DAYS)).isoformat()
 
+    attempts = len(rows)
+    observed = sum(1 for r in rows if (r.get("outcome") or "observed") == "observed")
+    errors = sum(1 for r in rows if r.get("outcome") == "error")
     summary = {
         "schema": SCHEMA_SUMMARY,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "target": {"base": base, "host": host},
-        "window": {"since": since, "dates": dates,
+        "window": {"since": since, "until": until, "scope": "cumulative" if cumulative else "latest",
+                   "dates": dates, "selected_dates": dates if cumulative else dates[-1:],
                    "baseline": dates[0] if dates else None,
                    "latest": dates[-1] if dates else None},
+        "query_set": {"fingerprint": query_set_fingerprint(queries),
+                      "query_fingerprints": {q["id"]: query_fingerprint(q) for q in queries}},
         "queries": {"total": len(queries),
                     "brand": sum(1 for q in queries if q["type"] == "brand"),
                     "nonbrand": sum(1 for q in queries if q["type"] == "nonbrand"),
                     "measured": len({r["query_id"] for r in rows})},
-        "rows": len(rows),
+        "rows": observed,
+        "quality": {"attempts": attempts, "observed": observed, "errors": errors,
+                    "unmeasured": attempts - observed - errors,
+                    "error_rate": _rate(errors, attempts),
+                    "incompatible_rows": len(incompatible),
+                    "regression_eligible": errors == 0 and not incompatible},
         "modes": dict(modes),
+        "conditions": {
+            "modes": sorted({r.get("mode") or "manual" for r in rows}),
+            "surfaces": sorted({r.get("surface") or r.get("engine") for r in rows}),
+            "locales": sorted({r.get("locale") or "" for r in rows}),
+            "login_states": sorted({r.get("login_state") or
+                                    ("signed_out" if r.get("signed_out") is True else "unknown")
+                                    for r in rows}),
+            "search_enabled": sorted({str(r.get("search_enabled")) for r in rows}),
+            "campaign_ids": sorted({r.get("campaign_id") or "" for r in rows}),
+            "models": sorted({r.get("model") or "" for r in rows}),
+        },
         "engines": engine_out,
+        "cohorts": cohorts,
         "urls": {"ours": [{"url": u, "count": n} for u, n in ours.most_common(20)],
                  "competitors": [{"domain": d, "count": n}
                                  for d, n in comp_domains.most_common(20)]},
         "by_query": list(by_query.values()),
         "trend": trend,
         "next_measure": next_measure,
+        "freshness": {"last_observed": dates[-1] if dates else None,
+                      "next_due": next_measure,
+                      "scheduled": False,
+                      "note": "next_due는 계산값이며 외부 스케줄러 등록 상태가 아니다"},
     }
     summary["headline"] = headline(summary)
     return summary
@@ -968,6 +1123,12 @@ def render_measure_md(summary: dict) -> str:
         " · ".join("%s %d" % (k, v) for k, v in sorted(summary["modes"].items())),
         summary["queries"]["total"], summary["queries"]["measured"]), ""]
 
+    quality = summary.get("quality") or {}
+    if quality.get("errors") or quality.get("unmeasured") or quality.get("incompatible_rows"):
+        out += ["⚠️ 관측 %d/%d · 오류 %d · 미측정 %d · 질의 불일치 %d. 오류·불일치가 있는 회차는 회귀 판정에 쓰지 않는다." % (
+            quality.get("observed", 0), quality.get("attempts", 0), quality.get("errors", 0),
+            quality.get("unmeasured", 0), quality.get("incompatible_rows", 0)), ""]
+
     out += ["## 엔진별 인용률 — 회차 합산", "",
             "| 엔진 | 브랜드 인용 | 비브랜드 인용 | 브랜드 언급(전체) |", "|---|---|---|---|"]
     for item in summary["engines"]:
@@ -975,8 +1136,22 @@ def render_measure_md(summary: dict) -> str:
         out.append("| %s | %d/%d | %d/%d | %d/%d |" % (
             item["label"], brand["cited"], brand["runs"], non["cited"], non["runs"],
             brand["mentioned"] + non["mentioned"], brand["runs"] + non["runs"]))
-    out += ["", "비브랜드가 진짜 승부처다. 브랜드만 오르는 상태는 "
-                "**원래 알던 사람에게만 보이는 상태**다.", ""]
+    out += ["", "비브랜드 질의는 신규 수요 도달을 보는 핵심 지표다. 브랜드 질의만 개선됐다면 "
+                "현재 표본에서는 **브랜드를 이미 아는 수요에 성과가 치우쳤을 가능성**을 먼저 점검한다.", ""]
+
+    if summary.get("cohorts"):
+        out += ["## 측정 표면별 — 웹 UI와 API 분리", "",
+                "| 측정 표면 | locale/login/search | 브랜드 | 비브랜드 | 오류 |",
+                "|---|---|---|---|---|"]
+        for c in summary["cohorts"]:
+            attempts = c["brand"]["attempts"] + c["nonbrand"]["attempts"]
+            errors = c["brand"]["errors"] + c["nonbrand"]["errors"]
+            out.append("| %s | %s / %s / %s | %d/%d | %d/%d | %d/%d |" % (
+                c["label"], c["locale"] or "미기록", c["login_state"],
+                "on" if c["search_enabled"] is True else "off" if c["search_enabled"] is False else "미기록",
+                c["brand"]["cited"], c["brand"]["runs"],
+                c["nonbrand"]["cited"], c["nonbrand"]["runs"], errors, attempts))
+        out += ["", "웹 UI 결과와 API 모델 결과는 같은 ChatGPT 이름이어도 별도 cohort다.", ""]
 
     ours = summary["urls"]["ours"]
     out += ["## 인용 URL — 어느 페이지가 뽑히나", ""]
@@ -996,8 +1171,8 @@ def render_measure_md(summary: dict) -> str:
         urls = " / ".join("%s (%d)" % (u["url"], u["count"]) for u in q["urls"][:3]) or "—"
         out.append("| `%s` %s | %s | %d/%d | %s |"
                    % (q["id"], q["text"], TYPE_LABEL[q["type"]], q["cited"], q["runs"], urls))
-    out += ["", "URL 칸이 비어 있으면 **그 질문용 페이지가 없다**는 뜻이고, "
-                "같은 URL이 반복되면 그 페이지가 우리 인용 자산이다.", ""]
+    out += ["", "URL 칸이 비어 있으면 **이 회차에서 인용 URL이 관측되지 않았거나 기록되지 않은 것**이다. "
+                "같은 URL이 반복 관측되면 해당 페이지를 우선 인용 자산 후보로 점검한다.", ""]
 
     if len(summary["trend"]) > 1:
         base = summary["trend"][0]
@@ -1014,11 +1189,12 @@ def render_measure_md(summary: dict) -> str:
         out.append("")
 
     out += ["## 다음", "",
-            "- 재측정 예정일: **%s** (마지막 측정 +%d일). "
-            "재측정을 기억에 맡기지 마라 — 보고에 날짜를 명시하는 것이 완료 조건이다."
+            "- 재측정 예정일: **%s** (마지막 측정 +%d일, 계산값). "
+            "외부 캘린더·CI·자동화에는 아직 등록되지 않았다 — 실제 일정 등록은 별도로 확인한다."
             % (summary["next_measure"], REMEASURE_DAYS),
             "- 인용됐는데 내용이 틀렸으면 `ops/measure.md` 7번 정정 절차를 따른다.",
-            "- 같은 오류가 여러 엔진에서 반복되면 개별 답변이 아니라 **공통 소스가 틀린 것**이다.",
+            "- 같은 오류가 여러 엔진에서 반복되면 **공통 소스를 우선 점검**한다. 반복만으로 "
+            "공통 소스가 원인이라고 확정할 수는 없다.",
             ""]
     return "\n".join(out)
 
@@ -1051,9 +1227,16 @@ def cmd_report(args) -> int:
     if args.since and not parse_date(args.since):
         sys.stderr.write("--since 형식이 아니다 (YYYY-MM-DD): %s\n" % args.since)
         return 2
+    if args.until and not parse_date(args.until):
+        sys.stderr.write("--until 형식이 아니다 (YYYY-MM-DD): %s\n" % args.until)
+        return 2
+    if args.since and args.until and args.since > args.until:
+        sys.stderr.write("--since는 --until보다 늦을 수 없다.\n")
+        return 2
 
     rows = load_log(os.path.join(mdir, "log.jsonl"))
-    summary = aggregate(rows, queries, host, base, since=args.since)
+    summary = aggregate(rows, queries, host, base, since=args.since, until=args.until,
+                        cumulative=args.cumulative)
 
     spath = args.out or os.path.join(mdir, "summary.json")
     write_json(spath, summary)
@@ -1167,10 +1350,16 @@ def run_auto(queries: list, engines: list, runs: int, host: str, keys: dict,
                 cited = any(is_ours(u, host) for u in urls)
                 comps = [d for d in (domain_of(u) for u in urls if not is_ours(u, host)) if d]
                 rows.append(make_row(
-                    date_str, query["id"], engine, run_no, "api", None, cited,
-                    urls, False if error else brand_hit(text, host, site_name),
+                    date_str, query["id"], engine, run_no, "api", None,
+                    None if error else cited, urls,
+                    None if error else brand_hit(text, host, site_name),
                     list(OrderedDict.fromkeys(comps)),
-                    ("실패: %s" % error) if error else "model=%s" % model))
+                    ("실패: %s" % error) if error else "model=%s" % model,
+                    outcome="error" if error else "observed", error=error,
+                    surface="api", login_state="not_applicable", search_enabled=True,
+                    campaign_id=query_set_fingerprint(queries)[:16],
+                    query_fingerprint_value=query_fingerprint(query),
+                    model=model))
     return rows
 
 
@@ -1245,10 +1434,10 @@ def cmd_auto(args) -> int:
                     site_name=site_name)
     log_path = os.path.join(mdir, "log.jsonl")
     append_rows(log_path, rows)
-    failed = sum(1 for r in rows if r["note"].startswith("실패"))
+    failed = sum(1 for r in rows if r.get("outcome") == "error")
     print("")
     print("기록 %d행 · 인용 %d · 실패 %d"
-          % (len(rows), sum(1 for r in rows if r["cited"]), failed))
+          % (len(rows), sum(1 for r in rows if r.get("cited") is True), failed))
     print("로그: %s" % log_path)
     print("다음: python tools/measure.py report %s" % args.audit)
     return 0
@@ -1281,6 +1470,9 @@ def main(argv=None) -> int:
     p = sub.add_parser("report", help="log.jsonl 집계 → summary.json + MEASURE.md")
     p.add_argument("audit")
     p.add_argument("--since", default=None, help="이 날짜부터 (YYYY-MM-DD)")
+    p.add_argument("--until", default=None, help="이 날짜까지 (YYYY-MM-DD)")
+    p.add_argument("--cumulative", action="store_true",
+                   help="선택 기간 전체 누적 (기본: 기간 내 최신 측정일만 집계, 추이는 보존)")
     p.add_argument("--out", default=None, help="summary.json 경로")
 
     p = sub.add_parser("auto", help="선택 자동화 — 환경변수에 키가 있을 때만")
@@ -1303,8 +1495,12 @@ def main(argv=None) -> int:
         sys.stderr.write("audit.json 스키마가 아니다: %s\n" % audit.get("schema"))
         return 2
 
-    return {"init": cmd_init, "form": cmd_form, "import": cmd_import,
-            "report": cmd_report, "auto": cmd_auto}[args.cmd](args)
+    try:
+        return {"init": cmd_init, "form": cmd_form, "import": cmd_import,
+                "report": cmd_report, "auto": cmd_auto}[args.cmd](args)
+    except (OSError, ValueError) as exc:
+        sys.stderr.write("측정 파일을 읽을 수 없다: %s\n" % exc)
+        return 2
 
 
 if __name__ == "__main__":

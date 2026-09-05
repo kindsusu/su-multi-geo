@@ -29,7 +29,10 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: Syntax check
-        run: python -m py_compile tools/crawl.py tools/report.py tools/generate.py tools/verify.py tools/measure.py tools/drift.py
+        run: python -m py_compile tools/seo_geo.py tools/crawl.py tools/report.py tools/generate.py tools/verify.py tools/measure.py tools/drift.py
+
+      - name: CLI environment check
+        run: python tools/seo_geo.py doctor
 
       - name: Unit + E2E tests
         run: python -m unittest discover tests -v

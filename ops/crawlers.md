@@ -5,9 +5,9 @@ AI 크롤러는 **용도가 세 종류**고, robots.txt 정책은 용도별로 �
 
 | 용도 | 막으면 잃는 것 |
 |---|---|
-| **학습** (모델 훈련 데이터) | 미래 모델의 브랜드 인지 → LLMO 레인 전체 |
-| **검색 색인** (AI 검색 자체 인덱스) | AI 검색 결과의 인용 |
-| **실시간 fetch** (질문 시 페이지 열람) | 답변 시점의 직접 인용·트래픽 |
+| **학습** (모델 훈련 데이터) | 해당 봇을 통한 향후 학습 가능성 |
+| **검색 색인** (AI 검색 자체 인덱스) | 해당 봇의 직접 발견·갱신 경로 |
+| **실시간 fetch** (질문 시 페이지 열람) | 해당 사용자 요청의 직접 열람 경로 |
 
 ## 벤더별 정책표
 
@@ -22,25 +22,21 @@ AI 크롤러는 **용도가 세 종류**고, robots.txt 정책은 용도별로 �
 
 ## ⚠️ Google-Extended는 크롤러가 아니다 — 구조가 다르다
 
-**이것이 3사 GEO에서 가장 중요한 차이다.**
-
 `Google-Extended`는 **user-agent가 없다.** 페이지를 직접 가져오지 않는다. Googlebot이
-이미 긁어온 콘텐츠에 대해 "Gemini 학습·그라운딩에 써도 되는가"를 결정하는
-**robots.txt 토큰**일 뿐이다.
+이미 가져온 콘텐츠의 Gemini 학습과 일부 grounding 사용을 제어하는 **robots.txt 토큰**이다.
 
 여기서 세 가지 실무적 결론이 나온다:
 
 1. **서버 로그에서 절대 안 보인다.** GPTBot·ClaudeBot처럼 방문 로그를 grep해서 선행지표로
    쓰는 방식이 Gemini에는 통하지 않는다. 측정 방법이 다르다 → `measure.md` 참조
-2. **rate-limit도 방화벽도 못 건다.** robots.txt가 유일한 인터페이스다
+2. 이 토큰 자체는 HTTP 요청이 아니므로 UA 기반 rate-limit·방화벽 대상이 아니다
 3. **막아도 구글 검색 순위·색인에는 영향이 없다.** 구글이 명시한 사실이다.
-   반대로 말하면 **허용해도 검색 순위가 오르지 않는다** — 이건 Gemini 그라운딩 전용 스위치다
+   허용해도 검색 순위 상승이나 Gemini 인용을 보장하지 않는다
 
 적용 범위: Gemini 모델 학습 / Gemini 앱 그라운딩 / Vertex AI의 Google 검색 그라운딩.
 
-> **따라서 Gemini GEO = Google 검색 색인 최적화 + Google-Extended 허용.**
-> Googlebot이 못 긁는 페이지는 Gemini에 절대 도달하지 않는다. GSC 색인이 비어 있으면
-> Gemini 전용 작업은 전부 헛수고다. `seo.md`부터 하라.
+> Google Search 기반 AI 표면은 Googlebot 접근·색인·snippet 적격성을 먼저 확인한다.
+> Google-Extended는 Search 포함·순위와 별도인 학습/일부 grounding 정책으로 관리한다.
 
 ## robots.txt 완본 (인용 유입이 목표일 때)
 
@@ -79,10 +75,10 @@ Sitemap: https://example.com/sitemap.xml
 ```
 
 **콘텐츠가 자산이라 학습만 막고 싶다면** 학습 열(`GPTBot`, `ClaudeBot`, `Google-Extended`,
-`CCBot`)만 Disallow 한다. 검색·fetch까지 같이 막으면 인용 유입 자체가 죽는다.
+`CCBot`)을 검색·fetch 역할과 분리해 검토한다. 검색·fetch 차단은 해당 봇의 직접 경로를 제한한다.
 
-단 `Google-Extended`를 막으면 **Gemini 그라운딩도 같이 꺼진다** (학습과 그라운딩이 한 토큰에
-묶여 있다). Gemini 인용을 원하면 이건 Allow여야 한다.
+`Google-Extended`의 정확한 적용 범위는 Google 공식 문서의 제품별 설명을 따른다. 차단해도
+Google Search 포함·순위에는 영향이 없으며, 허용만으로 Gemini 인용이 보장되지는 않는다.
 
 ## 검증
 

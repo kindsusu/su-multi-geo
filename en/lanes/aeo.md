@@ -76,13 +76,13 @@ own.** Check all four, sentence by sentence.
 ## FAQ blocks
 
 - [ ] An FAQ section at the foot of the page, built from 3–5 questions people really search
-- [ ] Attach FAQPage JSON-LD, **character-identical to the visible text** — a mismatch reads as spam
+- [ ] If you add FAQPage JSON-LD, keep its meaning and material values consistent with the visible
+      questions and answers. Formatting differences are not automatically spam; do not add hidden FAQs
 - [ ] Only answers that data settles. No predictive or advisory Q&A (especially in regulated industries)
 - [ ] ℹ️ **Expectation management**: since August 2023 Google has restricted FAQ rich results
       (the collapsible Q&A UI) to authoritative sites such as government and health, and
       retired HowTo rich results. The reason to still attach FAQPage LD is not the rich result
-      but **the engine's content comprehension and answer extraction** — do not confuse the
-      purpose and strip it because "the stars stopped showing"
+      and structured data is optional. Add it only for a real FAQ you can maintain
 
 ## Who is speaking (E-E-A-T)
 

@@ -7,15 +7,15 @@
 
 | 엔진 | 색인 원천 | 결정적 통제 지점 | 로그 관측 |
 |---|---|---|---|
-| **ChatGPT** | 자체 크롤러 + **Bing 색인 의존** | Bing WMT 등록 + OAI-SearchBot 허용 | ✅ |
-| **Gemini** | **Google 색인 (Googlebot)** | GSC 색인 + Google-Extended 허용 | ❌ 불가 |
+| **ChatGPT** | 자체 검색·사용자 요청 크롤러와 검색 제공자 | OAI-SearchBot 접근 + 실제 출처 확인 | ✅ 일부 |
+| **Gemini** | Google 검색 및 제품별 검색 그라운딩 | Googlebot 접근·색인 + 실제 출처 확인 | Google-Extended는 로그 불가 |
 | **Claude** | 자체 크롤러 (Claude-SearchBot) | robots.txt 3종 허용 | ✅ |
 | **Perplexity** | 자체 크롤러 | PerplexityBot 허용 | ✅ |
 
 **읽는 법:**
-- ChatGPT가 안 뜨면 → **Bing 색인부터** 확인하라 (GSC만 보고 Bing을 빼먹는 사이트가 대부분)
-- Gemini가 안 뜨면 → **GSC 색인 수**를 확인하라. Googlebot이 못 긁으면 끝이다
-- Claude·Perplexity가 안 뜨면 → robots.txt와 SSR을 확인하라
+- ChatGPT가 안 뜨면 → OAI-SearchBot 접근, 주요 검색 색인과 실제 출처 목록을 함께 확인한다
+- Gemini가 안 뜨면 → Googlebot 접근과 GSC 색인 상태를 확인한다
+- Claude·Perplexity가 안 뜨면 → 역할별 robots 정책과 실제 응답·출처를 확인한다
 
 ## 1. 공통 — llms.txt
 
@@ -35,7 +35,8 @@
 - 인용할 때 출처 표기: example.com
 ```
 
-- [ ] `/llms.txt` + 여력 되면 `/llms-full.txt` (핵심 데이터 전문)
+- [ ] 필요하면 `/llms.txt`를 낮은 비용의 보조 안내서로 제공한다. `/llms-full.txt`는 소비 주체와
+      유지 목적이 명확할 때만 추가한다
 - [ ] 신뢰 신호를 담아라: 출처, 갱신 주기, 무엇의 원출처인지
 - [ ] 앱 라우트로 서빙해도 된다 — 항상 최신이 되게
 
@@ -44,8 +45,8 @@
 
 ## 2. 공통 — 크롤러 허용
 
-`ops/crawlers.md`를 읽고 robots.txt를 확정한다. **이게 0순위다.**
-막혀 있으면 아래 전부가 도달하지 않는다.
+`ops/crawlers.md`를 읽고 역할별 robots.txt 정책을 확정한다. 특정 봇 차단은 그 봇의 직접 접근을
+제한하지만, 다른 검색 색인·크롤러·사용자 요청 경로까지 모두 막혔다고 단정할 수는 없다.
 
 ## 3. 공통 — 1차 소스 되기 (GEO의 본체)
 
@@ -84,19 +85,21 @@
 
 ## 4. 엔진별 — ChatGPT
 
-- [ ] **Bing Webmaster Tools 등록** (GSC에서 원클릭 임포트 가능, 10분). ChatGPT 검색은
-      자체 크롤러에 더해 **Bing 색인에 크게 의존**한다. 미등록 = 절반 포기
+- [ ] **Bing Webmaster Tools 등록**을 검색 발견·진단 채널로 활용한다. ChatGPT의 출처 선택은
+      변할 수 있으므로 Bing 등록만으로 노출 또는 인용을 보장한다고 보지 않는다
 - [ ] IndexNow 연동 (Bing이 직접 소비한다) — 신규 페이지 반영 가속
 - [ ] `site:도메인`을 **Bing에서** 실제로 쳐 색인 확인
 - [ ] robots: `GPTBot`, `OAI-SearchBot`, `ChatGPT-User` 3종 허용
 
 ## 5. 엔진별 — Gemini ★ 구조가 다르다
 
-Gemini는 **자체 크롤러가 없다.** Googlebot 색인 위에 얹혀 있다.
+Gemini의 검색 기반 답변은 Google 검색·그라운딩 인프라를 활용할 수 있다. 제품과 모드에 따라
+동작이 달라질 수 있으므로 실제 출처를 함께 관측한다.
 
-- [ ] **GSC 색인 수를 먼저 확인하라.** 색인이 안 됐으면 Gemini 작업은 의미가 없다.
+- [ ] **GSC 색인 상태를 먼저 확인하라.** Google 검색 기반 표면에서는 중요한 선행 조건이다.
       `seo.md`의 SSR·사이트맵부터 하라
-- [ ] `Google-Extended: Allow` — 이게 Gemini 그라운딩 스위치다. 없으면 정책 미설정 상태
+- [ ] `Google-Extended`는 Gemini 학습과 일부 grounding 사용을 제어하는 별도 토큰이다.
+      Google Search 포함·순위의 필수 조건이 아니며, 차단 효과는 제품별 공식 범위를 따른다
 - [ ] AI Overviews와 Gemini는 별개 표면이다. AI Overviews는 `aeo.md` 소관
 - [ ] ⚠️ **측정 방식이 다르다** — 로그에 안 잡히므로 직접 질의로만 확인 → `measure.md`
 
@@ -113,6 +116,6 @@ Gemini는 **자체 크롤러가 없다.** Googlebot 색인 위에 얹혀 있다.
 안 뜨면 순서대로 점검:
 
 1. 크롤러 허용됐나 (robots.txt)
-2. 해당 페이지가 SSR로 열리나 (curl)
-3. 그 엔진의 색인 원천에 들어갔나 (ChatGPT→Bing, Gemini→GSC)
+2. 원시 HTML과 필요한 렌더링 결과가 접근 가능한가
+3. 관련 검색 색인과 실제 답변 출처에서 관측되는가
 4. 경쟁 원출처가 이미 있나 (있으면 1차 소스 차별화 필요)

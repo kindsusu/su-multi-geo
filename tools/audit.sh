@@ -15,6 +15,7 @@ fi
 case "$DOMAIN" in http*) URL="$DOMAIN" ;; *) URL="https://$DOMAIN" ;; esac
 BASE="${URL%/}"
 UA='Mozilla/5.0 (compatible; multi-geo-audit/1.0)'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 C()     { curl -sL  --max-time 20 -A "$UA" -- "$@"; }
 CODE()  { curl -sL -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" -- "$1"; }
@@ -23,33 +24,9 @@ NCHAR() { wc -m | tr -d ' '; }
 
 # robots.txt에서 특정 UA의 실효 정책 판정. stdin=robots.txt, $1=UA
 # 출력: explicit-allow|explicit-block|explicit-partial|star-allow|star-block|star-partial|none
-# ponytail: 그룹의 첫 포괄 규칙으로 판정 (robots 표준의 longest-match 아님) — 부분 제한은 수동 확인으로 넘긴다
+# Python 크롤러와 같은 파서를 사용해 Shell/Python 판정 차이를 막는다.
 POLICY() {
-  awk -v t="$(printf '%s' "$1" | tr 'A-Z' 'a-z')" '
-    { sub(/\r$/,""); line=tolower($0); sub(/^[[:space:]]+/,"",line) }
-    line ~ /^user-agent:/ {
-      if (sawRule) { split("",grp); n=0; sawRule=0 }
-      ua=line; sub(/^user-agent:[[:space:]]*/,"",ua); sub(/[[:space:]]*$/,"",ua)
-      grp[++n]=ua; next
-    }
-    line ~ /^(dis)?allow:/ {
-      sawRule=1
-      isallow = (line ~ /^allow:/)
-      p=line; sub(/^(dis)?allow:[[:space:]]*/,"",p); sub(/[[:space:]]*$/,"",p)
-      for (i=1; i<=n; i++) {
-        key = (grp[i]==t) ? "e" : (grp[i]=="*") ? "s" : ""
-        if (key != "" && !(key in v)) {
-          if (isallow) v[key] = (p=="/" || p=="") ? "allow" : "partial"
-          else         v[key] = (p=="/") ? "block" : (p=="" ? "allow" : "partial")
-        }
-      }
-      next
-    }
-    END {
-      if ("e" in v) print "explicit-" v["e"]
-      else if ("s" in v) print "star-" v["s"]
-      else print "none"
-    }'
+  python -c 'import sys; sys.path.insert(0, sys.argv[1]); import crawl; print(crawl.robots_policy(sys.stdin.read(), sys.argv[2]))' "$SCRIPT_DIR" "$1"
 }
 
 echo "════════════════════════════════════════════"
@@ -67,7 +44,7 @@ echo ""
 echo "── 0. noindex 사고 점검 (최우선) ──"
 META_ROBOTS="$(printf '%s' "$HTML" | grep -oiE '<meta[^>]*robots[^>]*>' | head -3)"
 XROBOTS="$(curl -sIL --max-time 20 -A "$UA" "$BASE" | grep -i 'x-robots-tag' || true)"
-if printf '%s%s' "$META_ROBOTS" "$XROBOTS" | grep -qi 'noindex'; then
+if printf '%s%s' "$META_ROBOTS" "$XROBOTS" | grep -Eqi 'noindex|content=[^>]*none'; then
   echo "🚨 noindex 발견 — 다른 모든 최적화가 무효다. 이것부터 고쳐라"
   [ -n "$META_ROBOTS" ] && echo "   meta   : $META_ROBOTS"
   [ -n "$XROBOTS" ]     && echo "   header : $XROBOTS"
@@ -142,13 +119,15 @@ done
 
 echo ""
 echo "── 3. GEO: AI 크롤러 정책 (robots.txt 실효 판정) ──"
-for ua in GPTBot OAI-SearchBot ChatGPT-User \
+for ua in GPTBot OAI-SearchBot ChatGPT-User Googlebot Bingbot \
           ClaudeBot Claude-SearchBot Claude-User \
           PerplexityBot Perplexity-User Google-Extended Yeti; do
   V=$(printf '%s' "$RB" | POLICY "$ua")
   case "$V" in
     explicit-allow)   STATE="✅ 명시 허용" ;;
-    explicit-block)   STATE="🚫 명시 차단 — 이 엔진 인용을 포기한 상태다" ;;
+    explicit-block)
+      case "$ua" in GPTBot|ClaudeBot|Google-Extended) STATE="학습 사용 차단 (검색 접근과 별도)" ;;
+        *) STATE="🚫 검색/사용자 요청 접근 차단" ;; esac ;;
     explicit-partial) STATE="⚠️  부분 제한 (규칙 수동 확인 필요)" ;;
     star-allow)       STATE="허용 (User-agent:* 적용)" ;;
     star-block)       STATE="🚫 차단 (User-agent:* 전체 차단에 걸림)" ;;

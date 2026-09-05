@@ -7,6 +7,24 @@ is just a claim.**
 
 If you do not record the "before," you can never prove the effect.
 
+Start with the unified entry point when this is a new installation or local artifacts are uncertain:
+
+```bash
+python tools/seo_geo.py doctor
+python tools/seo_geo.py audit example.com --out out --max-pages 300 --lang en
+python tools/seo_geo.py status out/example.com/audit.json
+```
+
+`doctor` checks Python 3.10+ and tool imports without using the network. `audit` runs the crawl and
+HTML report together; an incomplete crawl is preserved but exits 2. `status` reads local artifacts
+only. It does not re-check deployment or search performance, and a displayed `next_due` is not an
+actual scheduled job.
+
+`generate.py` records only its own files in `.su-multi-geo-generated.json`. If
+`coverage.complete` is not true or known sitemap URLs may be missing, it withholds replacement
+sitemap XML and marks **do not replace** in `DEPLOY.md`. Keep the existing sitemap, fix crawl limits
+or failures, then rerun `audit` and `generate`.
+
 | Item | Where | Cadence |
 |---|---|---|
 | Impressions · clicks · avg position | Google Search Console (28d) | weekly |
@@ -114,21 +132,29 @@ python tools/measure.py form   out/<host>/audit.json --engines chatgpt,google_ai
 #   → measure/form-<date>.csv (Excel) + measure/form-<date>.html (offline entry form)
 #   ── a human now measures, signed out, in a private window ──
 python tools/measure.py import out/<host>/audit.json measure/form-<date>-filled.csv
-python tools/measure.py report out/<host>/audit.json   # → summary.json + MEASURE.md
+python tools/measure.py report out/<host>/audit.json   # latest measurement date → summary.json + MEASURE.md
+# Opt in only when a cumulative range is required
+python tools/measure.py report out/<host>/audit.json --since 2026-09-01 --until 2026-09-30 --cumulative
 ```
 
 - **Manual entry is the backbone.** The loop runs end to end with no API keys at all.
   The six measurement conditions above are pinned to the top of the form as a checklist
 - **The tool never invents a question.** `init` produces blanks and hints only — a human writes
   the wording, and once fixed it does not change
+- `report` uses the **latest measurement date** in the selected range for headline rates by default;
+  the date trend is retained. Use `--cumulative` only to combine dates deliberately
 - `python tools/measure.py auto ...` is an **optional plug-in**. It runs ChatGPT and Claude only
   when `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` are in the environment; without them it points you
-  at the manual form and exits cleanly (not an error). Automated or manual, rows land in the
-  **same `log.jsonl` in the same format** — only the `mode` column differs
+  at the manual form and exits cleanly (not an error). Both land in `log.jsonl`, but mode, surface,
+  model, locale, login and search conditions define separate cohorts. Do not combine ChatGPT web UI
+  results with an OpenAI API model
 - ⚠️ **The API is a different surface from the signed-out web UI.** Automation does not replace
   manual measurement; it is a cheap way to watch the trend more often. Gemini, Perplexity,
   Google AI Overviews, Naver, Daum and Copilot are not automatable — measure them by hand
 - The user pays for every call. `auto` counts the expected calls and asks before spending them
+- API failures use `outcome=error`; they are neither non-citations nor part of the citation-rate
+  denominator. Error rate is reported separately, and runs with errors cannot confirm a regression.
+  Raw responses are not stored
 
 ## 3. The re-measure date is part of the work
 
@@ -151,9 +177,14 @@ python tools/drift.py timeline out/<host>/audit.json   # per-date trend table �
 
 - **Snapshots are immutable.** Storing the same date and kind again is refused without `--force` —
   quietly overwriting a baseline later turns the whole trend into a lie
-- `next_due` is computed as **last snapshot + 14 days**. The last section of `DRIFT.md` lists the
+- With measurement snapshots, `next_due` is computed as **last measurement + 14 days**; otherwise it
+  falls back to the last snapshot. This is a calculated date, not a Calendar or CI registration.
+  Check `schedule.scheduled=false` and the “not registered” status output. The last section of `DRIFT.md` lists the
   commands to run that day, in order (crawl → snapshot → form → import → report → snapshot → compare)
-- `compare` judges regressions and **exits 1 when it finds one** — wire it into CI
+- `compare` only compares cohorts with the same query fingerprint and surface/mode/locale/login/search
+  conditions. Query changes, missing conditions, or API errors make a result `inconclusive`.
+  Non-brand rate changes need at least five observations on each side and at least 10 percentage
+  points; Wilson 95% intervals retain the uncertainty. Confirmed regressions exit 1
 
 ## 4. The stale-data trap
 

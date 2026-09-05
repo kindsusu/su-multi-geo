@@ -6,6 +6,25 @@
 
 변경 전 상태를 기록하지 않으면 효과를 영원히 증명할 수 없다.
 
+처음 실행하거나 산출물이 의심되면 통합 진입점으로 환경과 로컬 상태부터 확인한다.
+
+```bash
+python tools/seo_geo.py doctor
+python tools/seo_geo.py audit example.com --out out --max-pages 300 --lang ko
+python tools/seo_geo.py status out/example.com/audit.json
+```
+
+`doctor`는 Python 3.10+와 도구 import만 확인하며 네트워크를 조회하지 않는다. `audit`는 크롤과
+HTML 보고서를 함께 만들고, 크롤 범위가 불완전하면 파일은 보존하되 exit code 2를 낸다.
+`status` 역시 로컬 산출물 기록만 보여 준다. 배포 상태나 검색 성과를 새로 확인하지 않으며,
+표시된 `next_due`가 실제 예약됐다는 뜻도 아니다.
+
+배포 초안을 만들 때 `generate.py`는 `.su-multi-geo-generated.json` manifest에 자신이 만든
+파일만 기록한다. 다음 생성에서 같은 범주의 낡은 산출물을 정리하므로 사용자 파일과 생성 파일을
+구분할 수 있다. `audit.json`의 `coverage.complete`가 true가 아니거나 기존 사이트맵 URL의
+누락 위험이 있으면 교체용 sitemap XML을 만들지 않고 `DEPLOY.md`에 **교체 금지**로 남긴다.
+이때 기존 사이트맵을 덮어쓰지 말고 크롤 한도·실패 원인을 해결한 뒤 다시 `audit`와 `generate`를 실행한다.
+
 | 항목 | 어디서 | 주기 |
 |---|---|---|
 | 노출·클릭·평균순위 | Google Search Console (28일) | 주 1회 |
@@ -105,21 +124,29 @@ python tools/measure.py form   out/<host>/audit.json --engines chatgpt,google_ai
 #   → measure/form-<날짜>.csv (엑셀) + measure/form-<날짜>.html (오프라인 입력 폼)
 #   ── 여기서 사람이 비로그인·시크릿 창으로 실제 측정한다 ──
 python tools/measure.py import out/<host>/audit.json measure/form-<날짜>-filled.csv
-python tools/measure.py report out/<host>/audit.json   # → summary.json + MEASURE.md
+python tools/measure.py report out/<host>/audit.json   # 최신 측정일 → summary.json + MEASURE.md
+# 기간 전체 누적이 필요할 때만 명시한다
+python tools/measure.py report out/<host>/audit.json --since 2026-09-01 --until 2026-09-30 --cumulative
 ```
 
 - **수동 입력이 기본 골격이다.** API 키가 하나도 없어도 측정 루프는 완전히 돈다.
   폼 상단에 위 측정 조건이 체크리스트로 박혀 있다
 - **질의는 도구가 지어내지 않는다.** `init`은 빈칸과 힌트만 준다 — 문장은 사람이 적는다.
   한 번 고정하면 바꾸지 않는다
+- `report`의 기본 숫자는 선택 기간에서 **가장 최신 측정일 한 회차**다. 날짜별 `trend`는
+  그대로 보존된다. 여러 날짜를 합친 값이 필요할 때만 `--cumulative`를 쓴다
 - `python tools/measure.py auto ...`는 **선택 플러그인**이다. `OPENAI_API_KEY`·
   `ANTHROPIC_API_KEY`가 환경변수에 있을 때만 ChatGPT·Claude를 자동으로 돌린다.
   키가 없으면 "수동 모드"를 안내하고 그냥 끝난다(에러 아님).
-  자동이든 수동이든 **같은 `log.jsonl`에, 같은 형식으로** 쌓인다 (`mode` 칸으로만 구분)
+  자동이든 수동이든 같은 `log.jsonl`에 쌓이지만 `mode`·`surface`·모델·locale·로그인·검색
+  조건이 다른 **별도 cohort**로 집계된다. ChatGPT 웹 UI와 OpenAI API 모델 결과를 합쳐
+  하나의 ChatGPT 성과로 해석하지 않는다
 - ⚠️ **API 응답은 비로그인 웹 UI와 다른 표면이다.** 자동 측정은 수동 측정을 대체하지 않는다 —
   추세를 싸게 자주 보는 보조 수단이다. Gemini·Perplexity·Google AI Overviews·네이버·
   다음·Copilot은 자동화 대상이 아니다(수동 폼으로만 잰다)
 - 비용은 전부 사용자 부담이다. `auto`는 실행 전에 예상 호출 수를 세어 확인을 받는다
+- API 오류는 `outcome=error`로 기록하며 **미인용으로 세지 않고 인용률 분모에서도 뺀다.**
+  오류율은 별도로 보고하고, 오류가 있는 회차는 회귀 확정에 쓰지 않는다. 응답 원문은 저장하지 않는다
 
 ## 3. 재측정 일정 — 작업의 일부다
 
@@ -141,9 +168,14 @@ python tools/drift.py timeline out/<host>/audit.json   # 날짜별 추이 표 �
 
 - **스냅샷은 불변이다.** 같은 날짜 같은 종류를 다시 저장하면 `--force` 없이는 거부한다 —
   기준선을 나중에 조용히 덮어쓰면 추이 전체가 거짓말이 된다
-- `next_due`는 **마지막 스냅샷 + 14일**로 자동 계산된다. `DRIFT.md` 마지막 절이 그날 돌릴
+- `next_due`는 측정 스냅샷이 있으면 **마지막 측정일 + 14일**, 없으면 마지막 스냅샷을
+  기준으로 계산된다. 이것은 날짜 계산값일 뿐 캘린더·CI 작업을 실제로 예약하지 않는다.
+  `schedule.scheduled=false`와 `status`의 “미등록” 표시를 확인하라. `DRIFT.md` 마지막 절이 그날 돌릴
   명령을 순서대로 적어 둔다 (crawl → snapshot → form → import → report → snapshot → compare)
-- `compare`는 회귀를 판정하고 **회귀가 있으면 exit code 1**을 낸다 — CI에 걸 수 있다
+- `compare`는 같은 질의 fingerprint와 surface/mode/locale/login/search 조건의 cohort만 비교한다.
+  API 오류·질의 변경·조건 누락이 있으면 `inconclusive`이며 회귀로 확정하지 않는다. 비브랜드
+  인용률은 양쪽 각 5회 이상이고 10%p 이상 변할 때 의미 있는 변화로 판정하며 Wilson 95% 구간도 남긴다
+- 확정된 회귀가 있으면 exit code 1을 낸다 — CI에 걸 수 있다
 
 ## 4. 낡은 데이터 함정
 

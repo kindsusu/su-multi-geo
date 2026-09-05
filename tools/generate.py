@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import csv
 import difflib
+import hashlib
 import json
 import os
 import re
@@ -41,6 +42,8 @@ import crawl  # noqa: E402  (normalize·robots 파서·길이 기준을 그대�
 
 SCHEMA_PREFIX = "su-multi-geo/audit/"
 TODO = "<<TODO: %s>>"
+OWNERSHIP_MANIFEST = ".su-multi-geo-generated.json"
+JSONLD_MANIFEST = "jsonld/manifest.json"
 
 # 사이트맵 한도(5만 URL·50MB)에 여유를 둔 분할 기준
 MAX_URLS_PER_FILE = 45000
@@ -110,11 +113,49 @@ def sget(site: dict, *path, default=""):
 
 
 def slug_of(url: str) -> str:
+    """사람이 읽을 수 있으면서 정규 URL마다 고유한 파일 키."""
+    normalized = crawl.normalize(url)
     path = urllib.parse.urlsplit(url).path.strip("/")
-    if not path:
-        return "home"
-    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", urllib.parse.unquote(path)).strip("-")
-    return (slug or "page")[:80]
+    slug = "home" if not path else re.sub(
+        r"[^A-Za-z0-9._-]+", "-", urllib.parse.unquote(path)).strip("-") or "page"
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
+    return "%s-%s" % (slug[:67], digest)
+
+
+def _coverage(ctx: Ctx) -> dict:
+    return ctx.audit.get("coverage") or (ctx.audit.get("audit") or {}).get("coverage") or {}
+
+
+def _known_sitemap_urls(ctx: Ctx) -> list:
+    site = ctx.audit.get("site") or {}
+    urls = site.get("sitemap_urls")
+    candidates = (urls if isinstance(urls, list) else
+                  ((site.get("sitemap_vs_crawl") or {}).get("only_in_sitemap") or []))
+    out = set()
+    for url in candidates:
+        try:
+            if isinstance(url, str) and crawl.host_of(url) == ctx.host:
+                out.add(crawl.normalize(url))
+        except ValueError:
+            continue
+    return sorted(out)
+
+
+def sitemap_safety(ctx: Ctx, urls: list | None = None) -> dict:
+    """교체용 sitemap을 만들 만큼 크롤 범위가 충분한지 판정한다."""
+    urls = eligible_urls(ctx) if urls is None else urls
+    coverage = _coverage(ctx)
+    known = _known_sitemap_urls(ctx)
+    missing = sorted(set(known) - set(urls))
+    if coverage and coverage.get("complete") is not True:
+        reasons = coverage.get("reasons") or ["크롤 범위가 완전하지 않다"]
+        return {"safe": False, "verified": True, "missing": missing,
+                "reason": "; ".join(str(x) for x in reasons)}
+    if not coverage and missing:
+        return {"safe": False, "verified": False, "missing": missing,
+                "reason": "완성도 정보가 없는 구형 audit에서 기존 sitemap URL 누락이 확인됐다"}
+    return {"safe": True, "verified": bool(coverage), "missing": missing,
+            "reason": "" if coverage else "구형 audit이라 전수 크롤 여부를 확인할 수 없다"}
 
 
 def seg_label(segment: str) -> str:
@@ -182,15 +223,22 @@ def eligible_urls(ctx: Ctx) -> list:
     """사이트맵에 실을 URL — 200 · noindex 아님 · canonical이 자기 자신이거나 없음."""
     out = []
     for page in ctx.ok_pages:
+        try:
+            requested = crawl.normalize(page["url"])
+            final = crawl.normalize(page.get("final_url") or page["url"])
+        except ValueError:
+            continue
+        if crawl.host_of(final) != ctx.host or requested != final:
+            continue
         canonical = page.get("canonical")
         if canonical:
             try:
                 resolved = crawl.normalize(urllib.parse.urljoin(page["url"], canonical))
             except ValueError:
                 continue
-            if resolved.rstrip("/") != page["url"].rstrip("/"):
+            if resolved.rstrip("/") != final.rstrip("/"):
                 continue
-        out.append(page["url"])
+        out.append(final)
     return sorted(set(out))
 
 
@@ -218,6 +266,17 @@ def _chunk(urls) -> list:
 
 def gen_sitemap(ctx: Ctx) -> None:
     urls = eligible_urls(ctx)
+    safety = sitemap_safety(ctx, urls)
+    ctx.notes["sitemap_safety"] = safety
+    ctx.notes["sitemap_count"] = len(urls)
+    ctx.notes["sitemap_existing_count"] = len(_known_sitemap_urls(ctx))
+    ctx.notes["sitemap_unconfirmed_or_removed"] = safety["missing"]
+    if not safety["safe"]:
+        ctx.notes["sitemap_files"] = []
+        ctx.notes["sitemap_blocked"] = True
+        ctx.todo("교체용 사이트맵을 만들지 않았다 — %s. audit을 전수 크롤한 뒤 다시 생성하라."
+                 % safety["reason"])
+        return
     chunks = _chunk(urls)
     if len(chunks) == 1:
         ctx.write("sitemap.xml", _urlset(chunks[0]))
@@ -237,12 +296,14 @@ def gen_sitemap(ctx: Ctx) -> None:
         ctx.notes["sitemap_files"] = ["sitemap_index.xml"] + parts
 
     # lastmod는 audit.json에 없다 — 가짜 날짜를 넣느니 태그를 빼는 쪽이 맞다
-    ctx.notes["sitemap_count"] = len(urls)
     ctx.notes["sitemap_excluded"] = sorted(
         {p["url"] for p in ctx.pages if p.get("status") == 200} - set(urls))
     only_in_crawl = ((ctx.audit.get("site") or {}).get("sitemap_vs_crawl") or {}).get(
         "only_in_crawl") or []
     ctx.notes["sitemap_new"] = [u for u in only_in_crawl if u in set(urls)]
+    if not safety["verified"]:
+        ctx.todo("구형 audit에는 coverage가 없어 전수 크롤을 증명할 수 없다. 배포 전에 기존 "
+                 "사이트맵 전체와 생성 파일을 대조하라.")
     ctx.todo("사이트맵에 lastmod가 없다 — CMS·저장소에서 실제 수정일을 뽑을 수 있으면 채운다 "
              "(모르는 날짜를 지어 넣지 말 것).")
     if not urls:
@@ -259,7 +320,12 @@ def robots_plan(raw: str, policies: dict) -> tuple:
     """
     star_rules = crawl.crawl_rules(raw, "__su_multi_geo_no_such_ua__")
     add, keep = OrderedDict(), []
-    for _, uas in UA_GROUPS:
+    groups = list(UA_GROUPS)
+    covered = {ua for _, uas in groups for ua in uas}
+    extra = [ua for ua in crawl.ALL_UAS if ua not in covered]
+    if extra:
+        groups.append(("기타 검색 크롤러", extra))
+    for _, uas in groups:
         for ua in uas:
             policy = policies.get(ua, "none")
             if policy in ("explicit-block", "star-block"):
@@ -297,9 +363,20 @@ def gen_robots(ctx: Ctx) -> None:
                 lines.append("%s: %s" % (verb, path))
             lines.append("")
         lines.pop()  # 그룹 끝의 빈 줄 하나만 남긴다
+    covered = {ua for _, uas in UA_GROUPS for ua in uas}
+    extras = [ua for ua in add if ua not in covered]
+    if extras:
+        lines += ["", "# ── 기타 검색 크롤러 ──"]
+        for ua in extras:
+            lines.append("User-agent: %s" % ua)
+            for verb, path in add[ua]:
+                lines.append("%s: %s" % (verb, path))
+            lines.append("")
+        lines.pop()
 
     declared = [d for d in (robots.get("sitemap_declared") or [])]
-    sitemap_files = ctx.notes.get("sitemap_files") or ["sitemap.xml"]
+    sitemap_files = (ctx.notes.get("sitemap_files")
+                     if "sitemap_files" in ctx.notes else ["sitemap.xml"])
     new_declarations = []
     for name in sitemap_files:
         if name.startswith("sitemap-"):
@@ -501,19 +578,26 @@ def build_products(ctx: Ctx):
 
 
 def snippet(objs) -> str:
+    def html_safe_json(obj):
+        # HTML raw-text의 종료 토큰과 엔티티 해석을 막되 JSON 유효성은 유지한다.
+        return (json.dumps(obj, ensure_ascii=False, indent=2)
+                .replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e"))
     return "\n".join(
         '<script type="application/ld+json">\n%s\n</script>'
-        % json.dumps(obj, ensure_ascii=False, indent=2) for obj in objs) + "\n"
+        % html_safe_json(obj) for obj in objs) + "\n"
 
 
 def gen_jsonld(ctx: Ctx) -> None:
     per_page: dict = OrderedDict()
+    manifest = OrderedDict()
     made = []
 
     org = build_organization(ctx)
     if org:
         ctx.write_json("jsonld/organization.json", org)
         ctx.write("jsonld/organization.snippet.html", snippet([org]))
+        manifest["organization.json"] = ctx.base + "/"
+        manifest["organization.snippet.html"] = ctx.base + "/"
         made.append("Organization (전역 1회, @id=%s#organization)" % ctx.base)
     else:
         ctx.todo("site.json이 비어 Organization JSON-LD를 만들지 않았다 — name·url·logo· "
@@ -524,6 +608,7 @@ def gen_jsonld(ctx: Ctx) -> None:
         website = {"@context": "https://schema.org", "@type": "WebSite",
                    "name": name, "url": sget(ctx.site, "url") or (ctx.base + "/")}
         ctx.write_json("jsonld/website.json", website)
+        manifest["website.json"] = ctx.base + "/"
         per_page.setdefault(ctx.base + "/", []).append(website)
         made.append("WebSite (홈)")
     else:
@@ -531,7 +616,9 @@ def gen_jsonld(ctx: Ctx) -> None:
 
     faqs, faq_skipped = build_faqs(ctx)
     for url, obj in faqs.items():
-        ctx.write_json("jsonld/%s.faq.json" % slug_of(url), obj)
+        name = "%s.faq.json" % slug_of(url)
+        ctx.write_json("jsonld/%s" % name, obj)
+        manifest[name] = url
         per_page.setdefault(url, []).append(obj)
     if faqs:
         made.append("FAQPage %d페이지" % len(faqs))
@@ -541,8 +628,10 @@ def gen_jsonld(ctx: Ctx) -> None:
 
     products, product_skipped = build_products(ctx)
     for url, objs in products.items():
-        ctx.write_json("jsonld/%s.product.json" % slug_of(url),
+        name = "%s.product.json" % slug_of(url)
+        ctx.write_json("jsonld/%s" % name,
                        objs[0] if len(objs) == 1 else objs)
+        manifest[name] = url
         per_page.setdefault(url, []).extend(objs)
     if products:
         made.append("Product %d페이지" % len(products))
@@ -552,14 +641,21 @@ def gen_jsonld(ctx: Ctx) -> None:
         obj = build_breadcrumb(ctx, page)
         if not obj:
             continue
-        ctx.write_json("jsonld/%s.breadcrumb.json" % slug_of(page["url"]), obj)
+        name = "%s.breadcrumb.json" % slug_of(page["url"])
+        ctx.write_json("jsonld/%s" % name, obj)
+        manifest[name] = page["url"]
         per_page.setdefault(page["url"], []).append(obj)
         crumbs += 1
     if crumbs:
         made.append("BreadcrumbList %d페이지 (크롤한 경로 구조에서 생성)" % crumbs)
 
     for url, objs in per_page.items():
-        ctx.write("jsonld/%s.snippet.html" % slug_of(url), snippet(objs))
+        name = "%s.snippet.html" % slug_of(url)
+        ctx.write("jsonld/%s" % name, snippet(objs))
+        manifest[name] = url
+
+    ctx.write_json(JSONLD_MANIFEST, {
+        "schema": "su-multi-geo/jsonld-manifest/1", "files": manifest})
 
     ctx.notes["jsonld_made"] = made
     ctx.notes["jsonld_pages"] = {url: len(objs) for url, objs in per_page.items()}
@@ -699,13 +795,30 @@ def gen_deploy(ctx: Ctx) -> None:
     out.append("")
 
     if "sitemap_files" in n:
-        out += ["## 1. 사이트맵", "",
+        out += ["## 1. 사이트맵", ""]
+        if n.get("sitemap_blocked"):
+            safety = n.get("sitemap_safety") or {}
+            out += ["**교체 금지: 크롤 범위가 불완전해 sitemap XML을 생성하지 않았다.**",
+                    "", "- 이유: %s" % safety.get("reason", "확인 불가"),
+                    "- 기존 sitemap에서 누락 위험이 확인된 URL: %d개"
+                    % len(safety.get("missing") or []), ""]
+        else:
+            out += [
                 "- 실은 URL: **%d개** (HTTP 200 · noindex 아님 · canonical이 자기 자신이거나 없음)"
                 % n.get("sitemap_count", 0),
                 "- 제외한 URL: %d개 (noindex이거나 canonical이 다른 곳을 가리킨다)"
                 % len(n.get("sitemap_excluded") or []),
                 "- `lastmod`는 넣지 않았다 — 진단에서 실제 수정일을 알 수 없었다. "
                 "가짜 날짜보다 없는 편이 낫다.", ""]
+            removed = n.get("sitemap_unconfirmed_or_removed") or []
+            if removed:
+                out += ["### 기존 sitemap에서 새 파일에 넣지 않은 URL (%d개)" % len(removed), "",
+                        "전수 크롤 결과에서 200·indexable·self-canonical 조건을 통과하지 못한 URL이다. "
+                        "삭제 사유를 확인한 뒤 교체하라.", ""]
+                out += ["- `%s`" % u for u in removed[:200]]
+                if len(removed) > 200:
+                    out.append("- … 외 %d개" % (len(removed) - 200))
+                out.append("")
         new = n.get("sitemap_new") or []
         out += ["### 크롤엔 있는데 기존 사이트맵에 없던 URL (%d개)" % len(new), ""]
         if new:
@@ -802,6 +915,7 @@ SUBCOMMANDS = OrderedDict([
 
 def run(sub: str, audit: dict, site: dict, outdir: str) -> Ctx:
     ctx = Ctx(audit, site, outdir)
+    old = _read_ownership_manifest(outdir)
     if sub in ("all", "deploy"):
         # DEPLOY.md는 나머지 산출물을 설명하는 문서다 — 혼자 만들면 설명할 대상이 없다
         for name, func in SUBCOMMANDS.items():
@@ -809,10 +923,51 @@ def run(sub: str, audit: dict, site: dict, outdir: str) -> Ctx:
     else:
         if sub == "robots":
             # Sitemap: 선언에 쓸 파일명을 알아야 한다 — 파일은 쓰지 않고 이름만 계산
-            ctx.notes["sitemap_files"] = ["sitemap_index.xml"] \
-                if len(_chunk(eligible_urls(ctx))) > 1 else ["sitemap.xml"]
+            safety = sitemap_safety(ctx)
+            ctx.notes["sitemap_files"] = ([] if not safety["safe"] else
+                (["sitemap_index.xml"] if len(_chunk(eligible_urls(ctx))) > 1 else ["sitemap.xml"]))
         SUBCOMMANDS[sub](ctx)
+    _finalize_owned_files(ctx, old, sub)
     return ctx
+
+
+def _read_ownership_manifest(outdir: str) -> dict:
+    path = os.path.join(outdir, OWNERSHIP_MANIFEST)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            obj = json.load(fh)
+        return obj if obj.get("schema") == "su-multi-geo/generated-files/1" else {}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {}
+
+
+def _category(rel: str) -> str:
+    if rel.startswith("jsonld/"):
+        return "jsonld"
+    if rel.startswith("sitemap") and rel.endswith(".xml"):
+        return "sitemap"
+    if rel.startswith("meta-draft."):
+        return "meta"
+    return rel.split("/", 1)[0].split(".", 1)[0]
+
+
+def _finalize_owned_files(ctx: Ctx, old: dict, sub: str) -> None:
+    previous = set(old.get("files") or [])
+    current_written = set(ctx.files)
+    categories = set(SUBCOMMANDS) if sub in ("all", "deploy") else {sub}
+    keep = {f for f in previous if _category(f) not in categories}
+    final = keep | current_written
+    root = os.path.abspath(ctx.outdir) + os.sep
+    for rel in sorted(previous - final):
+        path = os.path.abspath(os.path.join(ctx.outdir, rel))
+        if path.startswith(root) and os.path.isfile(path):
+            os.remove(path)
+    manifest = {"schema": "su-multi-geo/generated-files/1", "files": sorted(final)}
+    path = os.path.join(ctx.outdir, OWNERSHIP_MANIFEST)
+    os.makedirs(ctx.outdir, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(manifest, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
 
 
 def load_json(path: str) -> dict:

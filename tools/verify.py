@@ -198,7 +198,7 @@ def price_visible(text: str, price) -> bool:
 def load_package(deploy_dir: str) -> dict:
     """배포 패키지에서 검증할 파일만 읽는다."""
     pkg = {"dir": deploy_dir, "robots": None, "llms": None, "sitemaps": [],
-           "jsonld": OrderedDict(), "meta": None}
+           "jsonld": OrderedDict(), "meta": None, "meta_present": False}
     if not os.path.isdir(deploy_dir):
         return pkg
     robots = os.path.join(deploy_dir, "robots.txt")
@@ -210,13 +210,23 @@ def load_package(deploy_dir: str) -> dict:
     for name in sorted(os.listdir(deploy_dir)):
         if name.startswith("sitemap") and name.endswith(".xml"):
             pkg["sitemaps"].append(name)
+    manifest_path = os.path.join(deploy_dir, generate.JSONLD_MANIFEST)
+    pkg["jsonld_manifest"] = None
+    if os.path.exists(manifest_path):
+        try:
+            pkg["jsonld_manifest"] = json.loads(read_text(manifest_path))
+        except ValueError:
+            pkg["jsonld_manifest"] = {}
     for path in sorted(glob.glob(os.path.join(deploy_dir, "jsonld", "*.json"))):
+        if os.path.basename(path) == "manifest.json":
+            continue
         try:
             pkg["jsonld"][os.path.basename(path)] = json.loads(read_text(path))
         except ValueError:
             pkg["jsonld"][os.path.basename(path)] = None
     meta = os.path.join(deploy_dir, "meta-draft.json")
     if os.path.exists(meta):
+        pkg["meta_present"] = True
         try:
             pkg["meta"] = json.loads(read_text(meta))
         except ValueError:
@@ -298,14 +308,15 @@ def sitemap_locs(session: Session, base: str, raw_robots: str, pkg: dict,
             candidates.append(url)
     results, locs, seen = [], [], set()
     queue = list(candidates)
-    while queue and len(results) < 12:
+    max_sitemaps = 500
+    while queue and len(results) < max_sitemaps:
         url = queue.pop(0)
         if url in seen:
             continue
         seen.add(url)
         rec = session.get(url)
         entry = {"url": url, "status": rec["status"], "parsed": False,
-                 "is_index": False, "loc_count": 0}
+                 "is_index": False, "loc_count": 0, "fetch_error": rec["error"]}
         if rec["status"] == 200:
             try:
                 root = ElementTree.fromstring(rec["body"].strip())
@@ -324,24 +335,33 @@ def sitemap_locs(session: Session, base: str, raw_robots: str, pkg: dict,
                 else:
                     locs.extend(found)
         results.append(entry)
-    return results, locs
+    remaining = len(set(queue) - seen)
+    return results, locs, {"discovered": len(seen) + remaining,
+                           "checked": len(results), "remaining": remaining,
+                           "limit": max_sitemaps}
 
 
 def check_sitemap(checks, session: Session, base: str, raw_robots: str, pkg: dict,
                   host: str, max_urls: int) -> list:
-    results, locs = sitemap_locs(session, base, raw_robots, pkg, host)
+    results, locs, coverage = sitemap_locs(session, base, raw_robots, pkg, host)
     if not results:
         chk(checks, "sitemap.reachable", "skip", "확인할 사이트맵 주소가 없다")
         return []
-    broken = [r for r in results if r["status"] != 200 or not r["parsed"]]
+    broken = [r for r in results
+              if r["status"] != 200 or not r["parsed"] or r.get("fetch_error")]
     if broken:
         chk(checks, "sitemap.reachable", "fail",
             "사이트맵 %d개가 200이 아니거나 XML로 파싱되지 않는다" % len(broken),
             {"sitemaps": results})
+    elif coverage["remaining"]:
+        chk(checks, "sitemap.reachable", "warn",
+            "사이트맵 %d개를 확인했지만 %d개가 상한 밖에 남았다"
+            % (coverage["checked"], coverage["remaining"]),
+            {"sitemaps": results, "coverage": coverage})
     else:
         chk(checks, "sitemap.reachable", "pass",
             "사이트맵 %d개 200·XML 파싱 OK (URL %d개)"
-            % (len(results), len(locs)), {"sitemaps": results})
+            % (len(results), len(locs)), {"sitemaps": results, "coverage": coverage})
 
     off_host = [u for u in locs if crawl.host_of(u) != host]
     targets = [u for u in locs if crawl.host_of(u) == host]
@@ -361,11 +381,16 @@ def check_sitemap(checks, session: Session, base: str, raw_robots: str, pkg: dic
         chk(checks, "sitemap.locs", "fail",
             "사이트맵 URL %d개 중 %d개가 200이 아니다" % (len(targets), len(dead)),
             {"dead": dead[:20], "checked": len(targets), "capped": capped})
+    elif capped:
+        chk(checks, "sitemap.locs", "warn",
+            "사이트맵 URL %d개는 200이지만 %d개를 상한 때문에 확인하지 못했다"
+            % (len(targets), len(locs) - len(targets)),
+            {"checked": len(targets), "capped": True,
+             "unverified": len(locs) - len(targets)})
     else:
         chk(checks, "sitemap.locs", "pass",
-            "사이트맵 URL %d개 전부 200%s"
-            % (len(targets), " (상한 %d로 잘림)" % max_urls if capped else ""),
-            {"checked": len(targets), "capped": capped})
+            "사이트맵 URL %d개 전부 200" % len(targets),
+            {"checked": len(targets), "capped": False, "unverified": 0})
 
     noindexed = [r["url"] for r in recs if r["status"] == 200 and is_noindex(r)]
     if noindexed:
@@ -373,22 +398,31 @@ def check_sitemap(checks, session: Session, base: str, raw_robots: str, pkg: dic
             "noindex 페이지 %d개가 사이트맵에 실려 있다" % len(noindexed),
             {"urls": noindexed[:20]})
     elif targets:
-        chk(checks, "sitemap.noindex", "pass", "사이트맵에 noindex 페이지가 없다")
+        chk(checks, "sitemap.noindex", "warn" if capped else "pass",
+            ("확인한 사이트맵 URL에는 noindex가 없지만 일부 URL은 미검사다" if capped
+             else "사이트맵에 noindex 페이지가 없다"),
+            {"checked": len(targets), "unverified": len(locs) - len(targets)})
 
     mismatch = []
     for rec in recs:
-        if rec["status"] != 200 or not rec["canonical"]:
+        if rec["status"] != 200:
             continue
-        canonical = crawl.normalize(
-            urllib.parse.urljoin(rec["final_url"], rec["canonical"]))
-        if canonical != crawl.normalize(rec["url"]):
-            mismatch.append({"url": rec["url"], "canonical": canonical})
+        requested = crawl.normalize(rec["url"])
+        final = crawl.normalize(rec["final_url"])
+        canonical = (crawl.normalize(urllib.parse.urljoin(rec["final_url"], rec["canonical"]))
+                     if rec["canonical"] else None)
+        if requested != final or (canonical is not None and canonical != final):
+            mismatch.append({"url": rec["url"], "final_url": final,
+                             "canonical": canonical})
     if mismatch:
         chk(checks, "sitemap.canonical", "fail",
             "사이트맵 URL %d개가 자기 자신이 아닌 canonical을 가리킨다" % len(mismatch),
             {"mismatch": mismatch[:20]})
     elif targets:
-        chk(checks, "sitemap.canonical", "pass", "사이트맵 URL과 canonical이 일치한다")
+        chk(checks, "sitemap.canonical", "warn" if capped else "pass",
+            ("확인한 URL의 최종 주소·canonical은 일치하지만 일부 URL은 미검사다" if capped
+             else "사이트맵 URL과 최종 주소·canonical이 일치한다"),
+            {"checked": len(targets), "unverified": len(locs) - len(targets)})
     return recs
 
 
@@ -419,10 +453,25 @@ def jsonld_targets(pkg: dict, audit: dict, base: str) -> list:
     for page in audit.get("pages") or []:
         if page.get("status") == 200:
             by_slug.setdefault(generate.slug_of(page["url"]), page["url"])
+            path = urllib.parse.urlsplit(page["url"]).path.strip("/")
+            legacy = (re.sub(r"[^A-Za-z0-9._-]+", "-", urllib.parse.unquote(path)).strip("-")
+                      or "home")[:80]
+            by_slug.setdefault(legacy, page["url"])
+    manifest_obj = pkg.get("jsonld_manifest")
+    manifest_present = manifest_obj is not None
+    manifest_valid = (isinstance(manifest_obj, dict)
+                      and manifest_obj.get("schema") == "su-multi-geo/jsonld-manifest/1"
+                      and isinstance(manifest_obj.get("files"), dict))
+    manifest = manifest_obj["files"] if manifest_valid else ({} if manifest_present else None)
     out = []
     for name, obj in pkg["jsonld"].items():
         stem = name[:-5]
-        if stem in ("organization", "website"):
+        if isinstance(manifest, dict):
+            url = manifest.get(name)
+            if not isinstance(url, str) or crawl.host_of(url) != crawl.host_of(base):
+                url = None
+            kind = stem.rsplit(".", 1)[-1]
+        elif stem in ("organization", "website"):
             kind, url = stem, home
         elif "." in stem:
             slug, kind = stem.rsplit(".", 1)
@@ -435,6 +484,64 @@ def jsonld_targets(pkg: dict, audit: dict, base: str) -> list:
         out.append({"file": "jsonld/%s" % name, "kind": kind, "url": url,
                     "obj": obj, "types": types})
     return out
+
+
+def ld_identity(node: dict):
+    """타입별 핵심 사실을 정규화한 비교 키."""
+    types = node.get("@type")
+    types = [types] if isinstance(types, str) else list(types or [])
+    kind = next((t for t in types if isinstance(t, str)), "")
+    n = norm_text
+
+    def u(value):
+        try:
+            return crawl.normalize(value) if value else ""
+        except (TypeError, ValueError):
+            return n(value)
+
+    def identifier(value):
+        if not value:
+            return ""
+        parts = urllib.parse.urlsplit(str(value))
+        base = u(urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path,
+                                         parts.query, "")))
+        return base + (("#" + parts.fragment) if parts.fragment else "")
+    if kind == "FAQPage":
+        pairs = []
+        for q in node.get("mainEntity") or []:
+            if not isinstance(q, dict):
+                continue
+            answer = q.get("acceptedAnswer") or {}
+            pairs.append((n(q.get("name")), n(answer.get("text") if isinstance(answer, dict) else "")))
+        return kind, tuple(sorted(pairs))
+    if kind == "Product":
+        offer = node.get("offers") or {}
+        if isinstance(offer, list):
+            offers = tuple(sorted((n(x.get("price")), n(x.get("priceCurrency")), u(x.get("url")))
+                                  for x in offer if isinstance(x, dict)))
+        elif isinstance(offer, dict):
+            offers = ((n(offer.get("price")), n(offer.get("priceCurrency")), u(offer.get("url"))),)
+        else:
+            offers = ()
+        return kind, n(node.get("name")), u(node.get("url")), offers
+    if kind == "Organization":
+        return kind, identifier(node.get("@id")), n(node.get("name")), u(node.get("url"))
+    if kind == "WebSite":
+        return kind, n(node.get("name")), u(node.get("url"))
+    if kind == "BreadcrumbList":
+        items = tuple((n(x.get("position")), n(x.get("name")), u(x.get("item")))
+                      for x in node.get("itemListElement") or [] if isinstance(x, dict))
+        return kind, items
+    return kind, json.dumps(node, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def ld_roots(obj) -> list:
+    if isinstance(obj, list):
+        return [x for item in obj for x in ld_roots(item)]
+    if not isinstance(obj, dict):
+        return []
+    graph = obj.get("@graph")
+    return [x for x in graph if isinstance(x, dict)] if isinstance(graph, list) else [obj]
 
 
 def ld_visible_misses(obj, text: str) -> list:
@@ -494,6 +601,13 @@ def check_jsonld(checks, session: Session, base: str, audit: dict, pkg: dict) ->
                                    "reason": "@type %s가 페이지 LD에 없다" % wanted})
                 break
         else:
+            wanted_ids = [ld_identity(x) for x in ld_roots(target["obj"])]
+            live_ids = {ld_identity(x) for obj in rec["ld_objs"] for x in ld_roots(obj)}
+            absent = [identity for identity in wanted_ids if identity not in live_ids]
+            if absent:
+                wrong_type.append({"file": target["file"], "url": target["url"],
+                                   "reason": "같은 @type은 있지만 패키지의 핵심 필드가 일치하지 않는다"})
+                continue
             misses = ld_visible_misses(target["obj"], rec["text"])
             if misses:
                 invisible.append({"file": target["file"], "url": target["url"],
@@ -502,13 +616,19 @@ def check_jsonld(checks, session: Session, base: str, audit: dict, pkg: dict) ->
     if missing:
         chk(checks, "jsonld.present", "fail",
             "LD가 %d개 페이지에서 확인되지 않는다" % len(missing), {"pages": missing[:20]})
+    elif unmapped:
+        chk(checks, "jsonld.present", "fail",
+            "manifest에서 대상 페이지를 확인할 수 없는 LD가 %d건이다" % len(unmapped),
+            {"files": unmapped[:20]})
     else:
         chk(checks, "jsonld.present", "pass",
             "패키지 LD %d건의 대상 페이지에서 ld+json 블록을 확인했다" % len(targets))
     if unmapped:
-        chk(checks, "jsonld.mapping", "warn",
+        chk(checks, "jsonld.mapping", "fail" if pkg.get("jsonld_manifest") is not None else "warn",
             "대상 URL을 찾지 못한 LD 파일이 %d개다 (audit.json의 크롤 목록에 없다)" % len(unmapped),
             {"files": unmapped[:20]})
+    elif pkg.get("jsonld_manifest") is not None:
+        chk(checks, "jsonld.mapping", "pass", "JSON-LD manifest의 파일→URL 매핑이 완전하다")
     if wrong_type:
         chk(checks, "jsonld.type", "fail",
             "@type이 어긋나거나 깨진 LD가 %d건이다" % len(wrong_type), {"items": wrong_type[:20]})
@@ -518,6 +638,9 @@ def check_jsonld(checks, session: Session, base: str, audit: dict, pkg: dict) ->
         chk(checks, "jsonld.visible", "fail",
             "LD가 화면에 없는 말을 한다 — %d개 페이지 (스팸 리스크)" % len(invisible),
             {"pages": invisible[:20]})
+    elif wrong_type or missing or unmapped:
+        chk(checks, "jsonld.visible", "skip",
+            "패키지 LD와 라이브 객체가 일치하지 않아 가시 내용 검증을 완료할 수 없다")
     else:
         chk(checks, "jsonld.visible", "pass",
             "LD의 문답·이름·가격이 페이지 가시 텍스트에 글자 그대로 있다")
@@ -541,37 +664,70 @@ def check_jsonld(checks, session: Session, base: str, audit: dict, pkg: dict) ->
 
 def check_meta(checks, session: Session, audit: dict, pkg: dict, max_urls: int) -> None:
     rows = pkg["meta"]
+    if pkg.get("meta_present") and rows is None:
+        chk(checks, "meta.applied", "fail", "meta-draft.json을 JSON으로 파싱할 수 없다")
+        return
     if not rows:
         chk(checks, "meta.applied", "skip", "패키지에 meta-draft.json이 없다")
         return
     changed = unchanged = applied = desc_changed = 0
-    misses = []
+    misses, failures, unchanged_urls = [], [], []
+    fields_expected = fields_matched = 0
+    requested_rows = rows[:max_urls]
     live_titles = []
-    for row in rows[:max_urls]:
+    for row in requested_rows:
         rec = session.get(row.get("url") or "")
         if rec["status"] != 200 or not rec["html"]:
+            failures.append({"url": row.get("url"), "status": rec["status"],
+                             "error": rec["error"]})
             continue
         title = norm_text(rec["title"])
         live_titles.append(title)
         if title == norm_text(row.get("current_title")):
             unchanged += 1
-            misses.append(row.get("url"))
+            unchanged_urls.append(row.get("url"))
         else:
             changed += 1
-        if title and title == norm_text(row.get("draft_title")):
+        draft_title = norm_text(row.get("draft_title"))
+        if draft_title and not draft_title.startswith("<<todo"):
+            fields_expected += 1
+        if draft_title and title == draft_title:
             applied += 1
-        if norm_text(rec["meta_description"]) != norm_text(row.get("current_description")):
+            fields_matched += 1
+        elif draft_title and not draft_title.startswith("<<todo"):
+            misses.append({"url": row.get("url"), "field": "title",
+                           "expected": draft_title, "actual": title})
+        live_desc = norm_text(rec["meta_description"])
+        draft_desc = norm_text(row.get("draft_description"))
+        if draft_desc and not draft_desc.startswith("<<todo"):
+            fields_expected += 1
+            if live_desc == draft_desc:
+                fields_matched += 1
+            else:
+                misses.append({"url": row.get("url"), "field": "description",
+                               "expected": draft_desc, "actual": live_desc})
+        if live_desc != norm_text(row.get("current_description")):
             desc_changed += 1
     evidence = {"rows": len(rows), "changed": changed, "unchanged": unchanged,
                 "draft_applied": applied, "description_changed": desc_changed,
-                "unchanged_urls": misses[:20]}
-    if changed:
+                "expected_fields": fields_expected, "matched_fields": fields_matched,
+                "mismatches": misses[:20], "fetch_failures": failures[:20],
+                "unchanged_urls": unchanged_urls[:20],
+                "checked_rows": len(requested_rows) - len(failures),
+                "unverified_rows": len(rows) - len(requested_rows) + len(failures)}
+    if fields_expected and fields_matched == fields_expected and not failures \
+            and len(requested_rows) == len(rows):
         chk(checks, "meta.applied", "pass",
-            "title이 바뀐 페이지 %d개 · 그대로 %d개 (초안과 일치 %d개, 설명 변경 %d개)"
-            % (changed, unchanged, applied, desc_changed), evidence)
+            "검토 가능한 meta 초안 %d개 필드가 라이브 값과 모두 일치한다" % fields_expected,
+            evidence)
+    elif misses:
+        chk(checks, "meta.applied", "fail",
+            "meta 초안과 다른 라이브 title/description이 %d개 필드다" % len(misses),
+            evidence)
     else:
         chk(checks, "meta.applied", "warn",
-            "meta 초안이 아직 한 페이지도 반영되지 않았다 (%d페이지 확인)" % len(live_titles),
+            "meta 초안 %d/%d 필드만 일치하거나 %d행을 확인하지 못했다"
+            % (fields_matched, fields_expected, evidence["unverified_rows"]),
             evidence)
 
     dups = {t: n for t, n in Counter(t for t in live_titles if t).items() if n > 1}
@@ -583,24 +739,41 @@ def check_meta(checks, session: Session, audit: dict, pkg: dict, max_urls: int) 
         chk(checks, "meta.duplicate", "pass", "중복 title이 남아 있지 않다")
 
 
-def check_noindex(session: Session, audit: dict) -> dict:
+def check_noindex(session: Session, audit: dict, max_urls: int) -> dict:
     """배포로 noindex가 새로 생기지 않았는가 — 실패면 최우선."""
-    before = {crawl.normalize(p["url"]) for p in (audit.get("pages") or [])
-              if crawl._noindex(p)}
-    now = [rec for rec in session.cache.values()
-           if rec.get("html") and rec.get("status") == 200 and is_noindex(rec)]
+    pages = audit.get("pages") or []
+    before = {crawl.normalize(p["url"]) for p in pages if crawl._noindex(p)}
+    expected = [p["url"] for p in pages
+                if p.get("status") == 200 and not crawl._noindex(p)]
+    targets = expected[:max_urls]
+    recs = [session.get(url) for url in targets]
+    now = [rec for rec in recs if rec.get("html") and rec.get("status") == 200
+           and is_noindex(rec)]
     new = [rec["url"] for rec in now
            if crawl.normalize(rec["url"]) not in before]
-    checked = sum(1 for r in session.cache.values() if r.get("html") and r.get("status") == 200)
+    checked = sum(1 for r in recs if r.get("html") and r.get("status") == 200)
+    unavailable = [{"url": r["url"], "status": r["status"], "error": r["error"]}
+                   for r in recs if r.get("status") != 200 or not r.get("html")]
+    unverified = len(expected) - len(targets) + len(unavailable)
+    evidence = {"new": new[:20], "pages_checked": checked,
+                "was_noindex": len(before), "expected": len(expected),
+                "unverified": unverified, "unavailable": unavailable[:20]}
     if new:
         return {"id": "noindex", "status": "fail",
                 "message": "배포 후 새로 noindex가 걸린 페이지가 %d개다 — 다른 모든 검증보다 우선한다"
                            % len(new),
-                "evidence": {"new": new[:20], "pages_checked": checked,
-                             "was_noindex": len(before)}}
+                "evidence": evidence}
+    if checked == 0:
+        return {"id": "noindex", "status": "fail",
+                "message": "배포 전 indexable 페이지를 한 건도 재확인하지 못했다",
+                "evidence": evidence}
+    if unverified:
+        return {"id": "noindex", "status": "warn",
+                "message": "새 noindex는 없지만 %d개 indexable 페이지를 확인하지 못했다" % unverified,
+                "evidence": evidence}
     return {"id": "noindex", "status": "pass",
             "message": "새로 생긴 noindex 없음 (%d페이지 확인)" % checked,
-            "evidence": {"pages_checked": checked, "was_noindex": len(before)}}
+            "evidence": evidence}
 
 
 def verify_deploy(audit: dict, deploy_dir: str, fetch=None, delay: float = 0.5,
@@ -616,8 +789,10 @@ def verify_deploy(audit: dict, deploy_dir: str, fetch=None, delay: float = 0.5,
     check_llms(checks, session, base, pkg)
     check_jsonld(checks, session, base, audit, pkg)
     check_meta(checks, session, audit, pkg, max_urls)
-    checks.insert(0, check_noindex(session, audit))  # 최우선 — 목록 맨 앞에 둔다
+    checks.insert(0, check_noindex(session, audit, max_urls))  # 최우선 — 목록 맨 앞에 둔다
 
+    incomplete = verification_incomplete(checks)
+    failed = any(c["status"] == "fail" for c in checks)
     return {
         "schema": SCHEMA,
         "mode": "deploy",
@@ -627,8 +802,28 @@ def verify_deploy(audit: dict, deploy_dir: str, fetch=None, delay: float = 0.5,
                    "requests": session.fetches},
         "checks": checks,
         "summary": summarize(checks),
-        "exit_code": 1 if any(c["status"] == "fail" for c in checks) else 0,
+        "completion": {"complete": not incomplete, "reasons": incomplete},
+        "exit_code": 1 if failed else (2 if incomplete else 0),
     }
+
+
+def verification_incomplete(checks: list) -> list:
+    """실패와 별개로, 검사하지 못한 범위가 남았는지 구조적으로 표시한다."""
+    reasons = []
+    for check in checks:
+        evidence = check.get("evidence") or {}
+        cid = check.get("id")
+        remaining = ((evidence.get("coverage") or {}).get("remaining")
+                     if isinstance(evidence.get("coverage"), dict) else 0)
+        unverified = evidence.get("unverified") or evidence.get("unverified_rows") or 0
+        if remaining:
+            reasons.append({"check": cid, "kind": "remaining_sitemaps", "count": remaining})
+        if unverified:
+            reasons.append({"check": cid, "kind": "unverified", "count": unverified})
+    unique = OrderedDict()
+    for reason in reasons:
+        unique[(reason["check"], reason["kind"])] = reason
+    return list(unique.values())
 
 
 # ─────────────────────────────────────────────────────────── B. diff 검증
@@ -732,6 +927,10 @@ def render_md(result: dict) -> str:
     out += ["| 결과 | 수 |", "|---|---|",
             "| ❌ fail | %d |" % s["fail"], "| ⚠️ warn | %d |" % s["warn"],
             "| ✅ pass | %d |" % s["pass"], "| — skip | %d |" % s["skip"], ""]
+    completion = result.get("completion")
+    if isinstance(completion, dict) and not completion.get("complete", True):
+        out += ["**검사 범위 불완전:** 확인하지 못한 URL·사이트맵이 남아 있어 성공으로 "
+                "종료하지 않았다(exit 2). 상세 범위는 `verify.json`의 `completion`에 있다.", ""]
 
     for status, title in (("fail", "❌ 실패 — 이것부터 고친다"),
                           ("warn", "⚠️ 경고"),
@@ -766,6 +965,8 @@ def print_summary(result: dict) -> None:
     print(" 결과: ❌ %d · ⚠️ %d · ✅ %d · — %d" % (s["fail"], s["warn"], s["pass"], s["skip"]))
     if s["fail"]:
         print(" 실패가 있다 — 배포는 아직 끝나지 않았다.")
+    elif not (result.get("completion") or {}).get("complete", True):
+        print(" 검사 범위가 불완전하다 — 확인하지 못한 항목이 남아 있다 (exit 2).")
 
 
 def load_json(path: str) -> dict:

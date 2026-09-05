@@ -1,18 +1,19 @@
 # SEO — Technical Groundwork, Item by Item
 
-Content a crawler cannot read is content that does not exist. One goal:
-**everything — body, meta, structured data — present in the HTML received without JavaScript.**
+The goal is content that search engines and services can fetch and understand reliably.
+Providing core copy and metadata in raw HTML improves access across crawlers with different rendering support.
 
-This lane is the precondition for **every** engine. Gemini in particular has Googlebot's index
-as its only gateway, so an empty result here means Gemini GEO never starts.
+This lane is shared groundwork for discovery. Google's AI search features use ordinary Search
+indexing and snippet eligibility, so check Googlebot access and indexing as separate evidence.
 
 ## 1. What the crawler actually sees
 
 - [ ] Do key pages open **without login?** Content behind an auth wall is not indexed.
       If you cannot open everything, at least SSR a teaser (first paragraph, key figures)
       and gate the rest
-- [ ] Does the HTML from `curl -sL <url>` contain the body? If it is an SPA/CSR app,
-      SSR/SSG/prerendering is priority one — nothing below matters without it
+- [ ] Does the HTML from `curl -sL <url>` contain the core body? For SPA/CSR apps, consider
+      SSR/SSG/prerendering. Google can render JavaScript, so sparse raw HTML alone does not prove
+      that indexing is impossible; inspect the rendered result and Search Console too
 - [ ] ⚠️ **The CSR bailout trap**: even on an SSR framework, certain hooks or APIs can drop
       a whole page to client rendering (e.g. `useSearchParams` without Suspense in Next.js).
       **Re-check representative pages with curl on every deploy** — a sudden drop in body
@@ -48,15 +49,16 @@ Check the **meta tag and the HTTP header — both**.
       For mixed strings, budget against the shorter limit
 - [ ] ⚠️ Measure **characters, not bytes**. In bash, `${#var}` counts UTF-8 bytes, so one CJK
       character reads as 3 — use `printf '%s' "$t" | wc -m`
-- [ ] Must be unique per page — hundreds of pages sharing a templated description reads as duplicate
+- [ ] Titles and descriptions should describe each page's distinct content. Repetition is an
+      improvement signal, not proof of duplicate content; inspect body content and canonical too
 - [ ] OG image: the face people see when sharing. Per-type dynamic generation is ideal
 
 ## 5. Structured data (JSON-LD)
 
-- [ ] Schema matching the page type: Article, Product, FAQPage, BreadcrumbList, Organization,
-      LocalBusiness (if you have branches or stores)
-- [ ] **Must match visible text 100%** — putting content in the LD that is not on screen
-      risks a spam determination
+- [ ] Structured data is not required for search or AI eligibility. Add a type such as Article,
+      Product, FAQPage, BreadcrumbList, Organization, or LocalBusiness only when the page supports it
+- [ ] Represent content users can see or otherwise verify accurately. Match meaning and material
+      values; harmless formatting differences do not require character-for-character identity
 - [ ] `@id` discipline: the same entity uses the same @id sitewide. Re-declaring Organization
       on every page splits the entity (a direct hit to the LLMO lane) — declare once globally
       and reference it

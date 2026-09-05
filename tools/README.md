@@ -12,13 +12,14 @@ crawl → report → generate → [사람이 배포] → verify → (14일) craw
 |---|---|---|---|
 | `audit.json` | `su-multi-geo/audit/1` | `crawl.py` | `report` `generate` `verify` `measure` `drift` |
 | `verify.json` | `su-multi-geo/verify/1` | `verify.py` | `drift`(스냅샷) |
-| `measure/queries.json` | `su-multi-geo/queries/1` | 사람(`measure.py init`이 초안) | `measure` |
-| `measure/log.jsonl` | `su-multi-geo/measure-row/1` | `measure.py import`·`auto` | `measure report` |
-| `measure/summary.json` | `su-multi-geo/measure/1` | `measure.py report` | `drift` |
+| `measure/queries.json` | `su-multi-geo/queries/1` 또는 `/2` | 사람(`measure.py init`이 v1 초안) | `measure` |
+| `measure/log.jsonl` | `su-multi-geo/measure-row/2` (v1 읽기 지원) | `measure.py import`·`auto` | `measure report` |
+| `measure/summary.json` | `su-multi-geo/measure/2` (drift가 v1도 읽음) | `measure.py report` | `drift` |
 | `history/index.json` | `su-multi-geo/history/1` | `drift.py snapshot` | `drift` |
 | `drift.json` | `su-multi-geo/drift/1` | `drift.py compare` | 사람 |
 
-필드를 바꾸면 스키마 버전을 올린다. 버전이 다른 파일은 도구가 거부한다.
+필드를 바꾸면 스키마 버전을 올린다. 측정 v1은 명시적으로 호환 읽기하며, 그 밖의 알 수 없는
+스키마는 거부하거나 집계에서 제외한다.
 
 | 도구 | 무엇 | 입력 | 출력 |
 |---|---|---|---|
@@ -41,6 +42,20 @@ measure.py는 이 흐름과 나란히, 배포 전 기준선부터 돈다:
 measure.py init → [사람이 질의 확정] → form → [사람이 측정] → import → report
                                                           ↑ (14일) 반복
 ```
+
+통합 진입점은 일상 실행과 로컬 상태 확인을 묶는다.
+
+```bash
+python tools/seo_geo.py doctor
+python tools/seo_geo.py audit example.com --out out --max-pages 300 --lang ko
+python tools/seo_geo.py status out/example.com/audit.json
+python tools/seo_geo.py generate all out/example.com/audit.json --site out/example.com/site.json
+```
+
+`doctor`는 Python 3.10+와 모듈 import만 확인한다. `audit`는 crawl과 HTML report를 함께 만들고,
+불완전 크롤이면 관측 파일을 보존하면서 exit 2를 낸다. 재진단 전 기존 audit는 `observations/`에
+보존된다. `status`는 audit·deploy manifest·verify·measure·drift의 **로컬 기록 여부**만 읽는다.
+네트워크 검증이나 예약 작업 생성은 하지 않는다.
 
 ## audit.sh — 빠른 1페이지 진단
 
@@ -144,6 +159,16 @@ python tools/generate.py meta out/example.com/audit.json --out /tmp/draft
 
 옵션: `--site <site.json>` (없으면 회사 사실 없이 만들 수 있는 것만), `--out <폴더>`
 (기본 `audit.json` 옆의 `deploy/`).
+
+생성된 파일은 `deploy/.su-multi-geo-generated.json` manifest에 기록한다. 다음 실행은 이
+manifest에서 같은 생성 범주의 낡은 파일만 정리하므로 사용자 파일과 소유권이 섞이지 않는다.
+
+### 불완전 크롤에서는 sitemap 교체를 보류한다
+
+`audit.json`의 `coverage.complete`가 true가 아니거나, 구형 audit에서 기존 sitemap URL이
+새 초안에서 빠질 위험이 확인되면 sitemap XML을 생성하지 않는다. `DEPLOY.md`에 **교체 금지**와
+누락 위험 URL 수를 남기고, robots.txt에도 존재하지 않는 새 sitemap 선언을 추가하지 않는다.
+기존 sitemap을 유지한 채 크롤 한도·실패 원인을 해결하고 `audit` → `generate`를 다시 실행한다.
 
 ### 무엇을 지어내지 않는가
 
@@ -255,7 +280,8 @@ python tools/verify.py diff out/example.com/audit.json out/after/example.com/aud
 python tools/measure.py init   out/example.com/audit.json
 python tools/measure.py form   out/example.com/audit.json --engines chatgpt,google_aio --runs 5
 python tools/measure.py import out/example.com/audit.json out/example.com/measure/form-2026-09-15-filled.csv
-python tools/measure.py report out/example.com/audit.json --since 2026-09-01
+python tools/measure.py report out/example.com/audit.json
+python tools/measure.py report out/example.com/audit.json --since 2026-09-01 --until 2026-09-30 --cumulative
 python tools/measure.py auto   out/example.com/audit.json --engines chatgpt,claude --runs 5
 ```
 
@@ -271,12 +297,14 @@ python tools/measure.py auto   out/example.com/audit.json --engines chatgpt,clau
 | `auto` | **선택.** 환경변수에 키가 있을 때만 ChatGPT·Claude 자동 질의 | `log.jsonl`에 append |
 
 옵션: `--engines`(쉼표 구분, 기본 `chatgpt,google_aio`) · `--runs`(기본 5) ·
-`--date YYYY-MM-DD`(기본 오늘) · `--since`(report) · `--delay`·`--yes`(auto).
+`--date YYYY-MM-DD`(기본 오늘) · `--since`·`--until`·`--cumulative`(report) ·
+`--delay`·`--yes`(auto).
 
 ### 수동이 기본 골격이다
 
 API 키가 하나도 없어도 측정 루프는 완전히 돈다. 자동화는 붙였다 뗐다 하는 플러그인이고,
-**자동이든 수동이든 같은 `log.jsonl`에 같은 형식으로 쌓인다** (`mode` 칸으로만 구분).
+자동과 수동은 같은 `log.jsonl`에 쌓이지만 `mode`·`surface`·모델·locale·로그인·검색 조건이
+다른 **별도 cohort**다. ChatGPT 웹 UI와 OpenAI API 모델 결과를 합쳐 해석하지 않는다.
 
 - `form-<날짜>.csv` — 엑셀용. **UTF-8 BOM**을 붙여 한글이 깨지지 않는다.
   입력 열(`cited`·`cited_urls`·`brand_mentioned`·`competitor_domains`·`note`)만 비어 있다
@@ -289,23 +317,28 @@ API 키가 하나도 없어도 측정 루프는 완전히 돈다. 자동화는 �
 ### 계약
 
 ```
-out/<host>/measure/queries.json   su-multi-geo/queries/1
+out/<host>/measure/queries.json   su-multi-geo/queries/1 또는 /2
   {"queries":[{"id":"Q01","text":"...","type":"brand|nonbrand","note":""}]}
 
-out/<host>/measure/log.jsonl      su-multi-geo/measure-row/1  · append-only · 한 줄 = 질의 1회
+out/<host>/measure/log.jsonl      su-multi-geo/measure-row/2  · append-only · 한 줄 = 질의 1회
   {"date":"2026-09-15","query_id":"Q01","engine":"chatgpt","run_no":1,
-   "mode":"manual|api","signed_out":true|false|null,"cited":true,
+   "mode":"manual|api","surface":"chatgpt_web_ui|api","locale":"ko-KR",
+   "login_state":"signed_out|signed_in|unknown|not_applicable","search_enabled":true,
+   "campaign_id":"...","query_fingerprint":"sha256","model":"","outcome":"observed|error|unmeasured",
+   "error":null,"signed_out":true|false|null,"cited":true|false|null,
    "cited_urls":["https://example.com/pricing"],"brand_mentioned":true,
    "competitor_domains":["competitor.com"],"note":"","recorded_at":"ISO8601"}
 
-out/<host>/measure/summary.json   su-multi-geo/measure/1   · report가 생성
+out/<host>/measure/summary.json   su-multi-geo/measure/2   · report가 생성
 ```
 
 `engine`은 고정 목록이다: `chatgpt` `google_aio` `gemini` `claude` `perplexity`
 `naver_ai` `daum` `copilot` `other`. 값이 늘면 스키마 버전을 올린다.
 
-로그는 **append-only**다 — 고치지 말고 다시 넣어라. 같은 `date+query_id+engine+run_no`가
-여러 번 들어오면 **읽을 때 마지막 것만** 쓴다.
+로그는 **append-only**다 — 고치지 말고 다시 넣어라. 날짜·질의·엔진·회차에 더해 mode·surface·
+locale·login·search·campaign까지 같은 관측 키가 여러 번 들어오면 **읽을 때 마지막 것만** 쓴다.
+따라서 같은 회차의 수동 UI와 API 측정은 서로 덮어쓰지 않는다. 기존 v1 질의·행은 읽지만 새
+기록은 v2이며, 알 수 없는 스키마 행은 제외한다.
 
 ### import가 걸러내는 것
 
@@ -319,6 +352,11 @@ out/<host>/measure/summary.json   su-multi-geo/measure/1   · report가 생성
 - **엔진 × (브랜드/비브랜드) 인용률** `N/M` — 회차 합산
 - **인용 URL 빈도** — 우리 호스트 vs 경쟁 도메인, 질의별로 어느 URL이 뽑히는지
 - **날짜별 추이** — 첫 측정일이 기준선, 이후는 기준선 대비 증감
+- 기본 headline과 엔진별 비율은 선택 기간의 **최신 측정일만** 집계한다. `trend`는 기간 전체를
+  보존하며, 여러 날짜 합산은 `--cumulative`로 명시한다
+- `observed`만 인용률 분모에 넣는다. `error`와 `unmeasured`는 오류율·품질 정보로 따로 내고,
+  오류·질의 fingerprint 불일치가 있으면 `regression_eligible=false`다
+- 웹 UI와 API 모델 등 조건 조합은 `cohorts` 표에서 분리한다
 - `ops/measure.md` 6번과 같은 형식의 한 줄 요약과 **다음 재측정 예정일**(마지막 측정 +14일)
 
 `브랜드 4/4`(질의 단위: 한 번이라도 인용된 질의 수)와 `ChatGPT 20/30`(회차 합산)은
@@ -348,7 +386,8 @@ Gemini·Perplexity·Google AI Overviews·네이버·다음·Copilot은 자동화
 - HTTP 오류는 상태 코드만 `note`에 남기고 본문은 버린다 (본문에 키가 실릴 이유는 없지만 안 받는다)
 - **비용은 전부 사용자 부담이다.** 실행 전에 예상 호출 수(엔진 × 질의 × 회차)를 세어
   출력하고, `--yes`가 없으면 확인을 받는다. 회차 사이에 `--delay`(기본 2초)를 지킨다
-- 실패한 회차는 버리지 않고 `note`에 사유를 적어 기록한다 — 표본에서 빠지면 분포가 왜곡된다
+- 실패한 회차는 `outcome=error`와 사유로 기록하되 **미인용으로 세거나 인용률 분모에 넣지 않는다.**
+  오류율은 별도 지표이며 응답 원문은 저장하지 않는다
 
 ## drift.py — 기준선 스냅샷 + 드리프트 비교
 
@@ -378,8 +417,11 @@ python tools/drift.py timeline out/example.com/audit.json
 
 - **같은 날짜 같은 종류는 `--force` 없이 거부한다.** 기준선을 조용히 덮어쓰면 추이가 거짓말이 된다
 - 첫 audit 스냅샷이 자동으로 기준선이 된다. 나중에 옮기려면 `--baseline`
-- `next_due` = **마지막 스냅샷 + 14일** (`ops/measure.md` 3번)
-- 하나라도 충돌하면 **아무것도 쓰지 않는다** — 반쯤 갱신된 이력이 제일 나쁘다
+- 측정 스냅샷이 있으면 `next_due` = **마지막 측정일 + 14일**, 없으면 마지막 스냅샷을
+  기준으로 계산한다 (`ops/measure.md` 3번)
+- `next_due`는 계산값이다. `schedule.scheduled=false`이며 캘린더·CI·Codex 자동화를 만들지 않는다
+- 모든 입력의 schema와 host를 먼저 검사하고 같은 날짜 충돌도 전부 확인한 뒤 원자적으로 기록한다.
+  하나라도 실패하면 기존 파일로 롤백한다. 읽을 때도 저장된 SHA-256을 재검증한다
 
 ### `compare` — 기준선 vs 최신
 
@@ -406,6 +448,11 @@ python tools/drift.py timeline out/example.com/audit.json
 페이지 수 변동과 20% 미만의 사이트맵 감소는 회귀로 치지 않는다 — 사실만 남긴다.
 브랜드 인용률 하락도 회귀가 아니다(질의 세트·엔진 편차에 더 흔들린다) — 표에는 그대로 실린다.
 
+비브랜드 인용률은 양쪽 모두 관측 5회 이상이고 차이가 10%p 이상일 때만 의미 있는 변화로
+판정하며 Wilson 95% 구간을 함께 기록한다. 질의 fingerprint나 surface/mode/locale/login/search
+조건이 다르거나 오류·미측정이 있으면 `comparison.status=inconclusive`로 남기고 exit 1 회귀로
+확정하지 않는다. 누적 보고서는 배포 전후 한 회차 비교용이 아니다.
+
 #### 낡은 기준선 경고
 
 비교 대상 기준선이 `--stale-days`(기본 30)보다 오래되면 ⚠️ **"기준선이 낡았다"**를
@@ -418,13 +465,13 @@ python tools/drift.py timeline out/example.com/audit.json
  "baseline":"2026-09-01","baseline_age_days":14,"warnings":["..."],
  "metrics":{"before":{},"after":{}},
  "audit_diff":{"resolved":[],"new":[],"persisting":[],"scorecard":{},"stats":{},"pages":{}},
- "measure_diff":{"totals":{},"engines":[],"ours":[],"ours_new":[],"ours_lost":[],"competitors":[]},
+ "measure_diff":{"comparison":{"status":"comparable|inconclusive"},"totals":{},"engines":[],"ours":[],"ours_new":[],"ours_lost":[],"competitors":[]},
  "regressions":[],"improvements":[],"unchanged":[],
- "next_due":"2026-09-29","exit_code":1}
+ "next_due":"2026-09-29","schedule":{"next_due":"2026-09-29","scheduled":false},"exit_code":1}
 ```
 
 `DRIFT.md`는 사람용 요약이다 — **❌ 회귀 → ✅ 개선 → 변화 없음 → 다음 재측정일과 그날 돌릴
-명령 순서**로 싣는다. **완료 조건은 `next_due`가 존재하는 것이다.**
+명령 순서**로 싣는다. `next_due`가 있어도 실제 예약은 별도다.
 
 ### `status` / `timeline`
 
@@ -437,7 +484,7 @@ python tools/drift.py timeline out/example.com/audit.json
 
 ```bash
 bash tools/test_audit.sh           # audit.sh
-python -m unittest discover tests  # 217개 — 단위 + E2E (외부 네트워크 없음)
+python -m unittest discover tests  # 단위 + E2E (외부 네트워크 없음)
 python -m unittest tests.test_e2e  # E2E만
 ```
 

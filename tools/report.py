@@ -16,6 +16,7 @@ import json
 import os
 import re
 import sys
+import urllib.parse
 from collections import Counter
 from html import escape
 from string import Template
@@ -33,7 +34,7 @@ SEV_ORDER = {"critical": 0, "warn": 1, "info": 2}
 
 L = {
     "ko": {
-        "eyebrow": "Phase 0 — 크롤러의 눈 전수 진단",
+        "eyebrow": "Phase 0 — 검색·AI 접근성 기술 진단",
         "doc_title": "%s 검색·AI 인용 진단",
         "meta": "기준 시각 %s · 크롤 %d페이지 · su-multi-geo",
         "theme": "화면 밝기 전환",
@@ -87,7 +88,7 @@ L = {
         },
     },
     "en": {
-        "eyebrow": "Phase 0 — full crawler-eye audit",
+        "eyebrow": "Phase 0 — search and AI accessibility audit",
         "doc_title": "%s search and AI-citation audit",
         "meta": "As of %s · %d pages crawled · su-multi-geo",
         "theme": "Toggle theme",
@@ -144,8 +145,8 @@ L = {
 
 # 데이터로 다시 쓰는 영문 메시지 (audit.json의 message는 국문 정본이다)
 MSG_EN = {
-    "NOINDEX": "noindex is set on {count} pages — it voids every other optimization.",
-    "TITLE_DUPLICATE": "{pages} pages share a title — they get collapsed as duplicates.",
+    "NOINDEX": "{count} pages restrict indexing — check whether exclusion is intentional.",
+    "TITLE_DUPLICATE": "{pages} pages share a title — check their distinct purpose and content.",
     "TITLE_MISSING": "{count} pages have no title.",
     "TITLE_TOO_LONG": "{count} titles exceed the recommended length (25-30 KO / 50-60 EN) and get truncated.",
     "TITLE_TOO_SHORT": "{count} titles are far too short.",
@@ -154,7 +155,7 @@ MSG_EN = {
     "DESC_TOO_LONG": "{count} descriptions exceed the recommended length (70-80 KO / 150-160 EN).",
     "DESC_TOO_SHORT": "{count} descriptions are far too short.",
     "JSONLD_MISSING": "{count} pages carry no JSON-LD at all.",
-    "FAQ_MISSING": "No FAQPage/QAPage JSON-LD anywhere — no surface for an answer box to lift.",
+    "FAQ_MISSING": "No FAQPage/QAPage JSON-LD found. This is optional and not an AI citation requirement.",
     "ORG_JSONLD_MISSING": "No Organization/LocalBusiness JSON-LD — nothing anchors the entity.",
     "ORG_JSONLD_SCATTERED": "{count} pages each declare their own Organization — collapse them onto one global @id.",
     "CANONICAL_MISSING": "{count} pages have no canonical.",
@@ -172,7 +173,7 @@ MSG_EN = {
     "REDIRECT_HOPS": "The home page takes {hops} redirect hops — cut it to one.",
     "ALT_HOST_UNREACHABLE": "The www/apex variant {host} is unreachable ({result}) — visitors and crawlers arriving there are lost.",
     "NAVER_VERIFY_MISSING": "No naver-site-verification meta — Search Advisor may not be connected.",
-    "AI_CRAWLER_BLOCKED": "AI crawlers are blocked — those engines cannot cite us.",
+    "AI_CRAWLER_BLOCKED": "Search or retrieval bots are restricted — review the affected engine's access policy.",
     "AI_CRAWLER_PARTIAL": "AI crawlers are partially restricted — read the rules directly.",
     "AI_CRAWLER_UNDECLARED": "AI crawlers are not declared in robots.txt — allowed by default, but left to chance.",
     "NAVER_CRAWLER_BLOCKED": "Korean search crawlers are blocked — the whole NEO lane is shut.",
@@ -180,16 +181,16 @@ MSG_EN = {
 
 # 권고 로드맵 규칙: code -> (순서, 국문 조치, 영문 조치, 서버 접근 필요)
 ROADMAP = {
-    "NOINDEX": (1, "noindex를 걷어낸다 — 어느 템플릿·헤더가 뿜는지부터 찾는다.",
-                "Strip the noindex — first find which template or header emits it.", True),
+    "NOINDEX": (1, "색인하려는 페이지인지 확인하고, 의도하지 않은 noindex만 수정한다.",
+                "Confirm indexing intent; remove only unintended noindex directives.", True),
     "NAVER_CRAWLER_BLOCKED": (2, "robots.txt에서 Yeti·Daumoa 차단을 푼다.",
                               "Unblock Yeti and Daumoa in robots.txt.", True),
-    "AI_CRAWLER_BLOCKED": (3, "robots.txt에서 AI 크롤러 차단을 푼다 (ops/crawlers.md).",
-                           "Unblock the AI crawlers in robots.txt (ops/crawlers.md).", True),
-    "THIN_TEXT": (4, "본문을 SSR로 내보낸다 — 크롤러는 자바스크립트를 실행하지 않는다.",
-                  "Serve the body via SSR — crawlers do not run JavaScript.", True),
-    "SITEMAP_MISSING": (5, "sitemap.xml을 만들어 상세 URL을 하나도 빠짐없이 싣는다.",
-                        "Publish sitemap.xml with every detail URL, none missing.", True),
+    "AI_CRAWLER_BLOCKED": (3, "목표 엔진의 검색·열람 정책을 확인한다. 학습 허용 여부는 별도로 결정한다.",
+                           "Review search/retrieval access for target engines separately from training consent.", True),
+    "THIN_TEXT": (4, "원시 HTML과 렌더링 본문을 대조하고 필요한 콘텐츠를 SSR 또는 사전 렌더링으로 제공한다.",
+                  "Compare raw and rendered HTML; consider SSR or pre-rendering for essential content.", True),
+    "SITEMAP_MISSING": (5, "검사 범위를 확인하고 색인 대상인 최종 canonical URL로 사이트맵을 만든다.",
+                        "Confirm crawl coverage and publish verified, indexable canonical URLs in the sitemap.", True),
     "SITEMAP_NOT_DECLARED": (6, "robots.txt에 Sitemap: 줄을 추가한다.",
                              "Add the Sitemap: line to robots.txt.", True),
     "ROBOTS_MISSING": (6, "robots.txt를 만든다 (ops/crawlers.md의 명시형 템플릿).",
@@ -226,8 +227,8 @@ ROADMAP = {
                            "Confirm non-self canonicals are the intended consolidation.", True),
     "JSONLD_MISSING": (22, "페이지 유형별 JSON-LD를 넣는다 (Article·Product·BreadcrumbList).",
                        "Add JSON-LD per page type (Article, Product, BreadcrumbList).", False),
-    "FAQ_MISSING": (23, "실제 문의에서 뽑은 FAQPage JSON-LD를 만든다 (lanes/aeo.md).",
-                    "Build FAQPage JSON-LD from real inbound questions (lanes/aeo.md).", False),
+    "FAQ_MISSING": (23, "실제 FAQ 콘텐츠가 있는 경우에만 적합한 구조화 데이터를 검토한다. AI 인용의 필수 조건은 아니다.",
+                    "Consider FAQ structured data only for real FAQs; it is not required for AI citations.", False),
     "ORG_JSONLD_MISSING": (24, "Organization JSON-LD를 전역 @id 하나로 선언한다.",
                            "Declare Organization JSON-LD once, under one global @id.", False),
     "ORG_JSONLD_SCATTERED": (25, "흩어진 Organization 선언을 전역 @id 하나로 모은다.",
@@ -241,6 +242,15 @@ ROADMAP = {
     "LLMS_TXT_MISSING": (29, "llms.txt를 만들어 핵심 문서 지도를 준다 (lanes/geo.md).",
                          "Publish llms.txt as a map of key documents (lanes/geo.md).", True),
 }
+
+ROADMAP.update({
+    "CRAWL_INCOMPLETE": (0, "미검사 URL과 중단 사유를 해결한 뒤 재진단한다. 기존 사이트맵을 축소 교체하지 않는다.",
+                         "Resolve incomplete coverage and re-audit before replacing the sitemap.", True),
+    "SNIPPET_RESTRICTED": (1, "Google 답변 노출이 목표라면 의도하지 않은 nosnippet·max-snippet:0을 수정한다.",
+                           "Review unintended nosnippet/max-snippet:0 when targeting Google AI answers.", True),
+    "TRAINING_CRAWLER_BLOCKED": (30, "학습 제외 정책을 기록한다. 검색·열람 허용 여부는 별도로 확인한다.",
+                                 "Record training opt-out separately from search/retrieval access.", False),
+})
 
 MEASURE_RULES = {
     "ko": [
@@ -407,7 +417,29 @@ def section_summary(report, lab, ann, lang):
         ])
     body = table([lab["th"]["sev"], "Lane", lab["th"]["code"], lab["th"]["what"]], rows) \
         if rows else '<div class="note">%s</div>' % escape(lab["no_findings"])
-    return verdict + chip_html + body
+    return evidence_scope(report, lang) + verdict + chip_html + body
+
+
+def evidence_scope(report, lang):
+    coverage = report.get("coverage") or {}
+    complete = coverage.get("complete")
+    label = (("발견한 URL 검사 완료" if complete is True else "검사 범위 불완전 / 미확인")
+             if lang == "ko" else ("Discovered URLs checked" if complete is True else "Incomplete / unknown coverage"))
+    explanation = ("이 점수는 기술 접근성 검사다. 실제 검색 색인·AI 인용·유입 성과는 별도 측정해야 한다. "
+                   "검사 완료도 사이트의 모든 URL을 발견했다는 뜻은 아니다."
+                   if lang == "ko" else
+                   "These are technical checks. Search indexing, AI citations and traffic require separate measurements. "
+                   "Completion covers discovered URLs, not every URL that may exist.")
+    parts = [pill("ok" if complete is True else "warn", label), "<p>%s</p>" % escape(explanation)]
+    if coverage:
+        parts.append('<p class="mono">%s</p>' % escape(
+            ("요청 %s · 대기 %s · robots 제외 %s · 상한 %s" if lang == "ko" else
+             "Fetched %s · queued %s · robots-excluded %s · limit %s") %
+            tuple(coverage.get(k, "—") for k in ("pages_fetched", "queued_remaining", "blocked_count", "max_pages"))))
+    reasons = coverage.get("reasons") or []
+    if reasons:
+        parts.append('<p>%s</p>' % escape("; ".join(str(r) for r in reasons)))
+    return '<div class="card scope">%s</div>' % "".join(parts)
 
 
 def section_shape(report, lab, ann, lang):
@@ -441,7 +473,7 @@ def section_shape(report, lab, ann, lang):
     for page in report["pages"]:
         if page["status"] != 200:
             continue
-        parts = [p for p in page["url"].split("/")[3:] if p]
+        parts = [p for p in urllib.parse.urlsplit(page["url"]).path.split("/") if p]
         seg["/%s/" % parts[0] if parts else "/"] += 1
     pat_rows = [[td('<span class="url">%s</span>' % escape(k)), td(str(v), "num")]
                 for k, v in seg.most_common(25)]
@@ -501,43 +533,47 @@ def section_strengths(report, lab, ann, lang):
     ok200 = [p for p in report["pages"] if p["status"] == 200]
     total = max(1, len(ok200))
     items = []
+    if not ok200:
+        return '<div class="note">%s</div>' % escape(lab["no_strength"])
 
     def keep(cond, ko, en):
         if cond:
             items.append(ko if lang == "ko" else en)
 
-    keep("NOINDEX" not in codes,
-         "noindex 사고 없음 — 크롤러가 색인해도 된다고 읽는다.",
-         "No noindex accident — crawlers are told they may index.")
-    live = [s["url"] for s in site["sitemaps"] if s["status"] == 200]
+    keep(stats["pages_noindex"] == 0,
+         "검사한 HTML 페이지에서 noindex가 발견되지 않았다. 실제 색인 여부는 검색 도구에서 확인한다.",
+         "No noindex found in checked HTML pages. Confirm actual indexing with search tools.")
+    live = [s["url"] for s in site["sitemaps"] if s["status"] == 200 and s.get("parsed") is True]
     keep("SITEMAP_MISSING" not in codes and live,
          "사이트맵이 살아 있다: %s" % ", ".join(live),
          "A sitemap responds: %s" % ", ".join(live))
     keep(bool(site["robots"]["sitemap_declared"]),
          "robots.txt가 사이트맵을 선언하고 있다.",
          "robots.txt declares the sitemap.")
-    keep("AI_CRAWLER_BLOCKED" not in codes,
-         "AI 크롤러 어느 것도 차단돼 있지 않다.",
-         "No AI crawler is blocked.")
-    keep("NAVER_CRAWLER_BLOCKED" not in codes,
-         "Yeti·Daumoa가 열려 있다 — 국내 검색 문은 닫히지 않았다.",
-         "Yeti and Daumoa are allowed — the Korean search door is open.")
+    policies = site["robots"].get("policies") or {}
+    search_bots = ("OAI-SearchBot", "Claude-SearchBot", "PerplexityBot")
+    keep(all(policies.get(ua, "").endswith("allow") for ua in search_bots),
+         "확인한 AI 검색 봇에 robots 전면 차단이 없다. 서버/WAF와 실제 방문 여부는 별도 확인한다.",
+         "Checked AI search bots have allow policies. Server/WAF access and actual visits require separate checks.")
+    keep(all(policies.get(ua, "").endswith("allow") for ua in ("Yeti", "Daumoa")),
+         "Yeti·Daumoa의 robots 허용 정책을 확인했다.",
+         "Yeti and Daumoa have allow policies in robots.txt.")
     keep(stats["pages_with_jsonld"] > total * 0.5,
          "페이지 %d개 중 %d개가 JSON-LD를 갖고 있다." % (total, stats["pages_with_jsonld"]),
          "%d of %d pages carry JSON-LD." % (stats["pages_with_jsonld"], total))
-    keep("THIN_TEXT" not in codes,
-         "본문이 자바스크립트 없이도 HTML에 실려 나온다 (SSR 확인).",
-         "Body text arrives in the HTML without JavaScript (SSR confirmed).")
+    keep(all(p.get("text_chars", 0) >= 300 for p in ok200),
+         "검사한 HTML 페이지에 300자 이상의 텍스트가 있다. 렌더링 본문·콘텐츠 품질은 별도 확인한다.",
+         "Checked HTML pages contain at least 300 text characters; rendered content and quality need separate checks.")
     keep("TITLE_DUPLICATE" not in codes and stats["unique_titles"] > 1,
-         "title이 페이지마다 다르다 — 중복으로 묶일 위험이 없다.",
-         "Titles are unique per page — no duplicate collapse risk.")
+         "검사한 페이지의 title이 서로 다르다.",
+         "Checked pages have distinct titles.")
     keep("DESC_DUPLICATE" not in codes and stats["unique_descriptions"] > 1,
          "meta description이 페이지마다 다르다.",
          "Meta descriptions are unique per page.")
-    keep("CANONICAL_MISSING" not in codes,
-         "모든 페이지에 canonical이 있다.",
-         "Every page carries a canonical.")
-    keep("SOFT_404" not in codes,
+    keep(all(p.get("canonical") for p in ok200),
+         "검사한 HTML 페이지에 canonical이 있다.",
+         "Checked HTML pages carry a canonical.")
+    keep(site["hygiene"].get("probe_404") == 404,
          "없는 주소가 정확히 404를 낸다.",
          "Missing addresses return a real 404.")
     keep("REDIRECT_HOPS" not in codes,
@@ -545,7 +581,7 @@ def section_strengths(report, lab, ann, lang):
          "The home page redirects at most once.")
     keep(site["llms"].get("llms.txt") == 200,
          "/llms.txt가 이미 있다.", "/llms.txt already exists.")
-    keep("NAVER_VERIFY_MISSING" not in codes,
+    keep(any(p.get("naver_site_verification") for p in ok200),
          "네이버 소유확인 메타가 들어가 있다.",
          "The Naver site-verification meta is in place.")
 
@@ -566,10 +602,10 @@ def section_assets(report, lab, ann, lang):
         subject_e = ("사이트가 스스로 선언한 엔티티 유형: %s" if lang == "ko"
                      else "Entity types the site declares: %s") % listed
     else:
-        subject_v = pill("bad", lab["status"]["bad"])
-        subject_e = ("선언된 구조화 데이터가 없다 — AI가 무엇으로 우리를 부를지 우리가 안 정했다."
+        subject_v = unknown
+        subject_e = ("선언된 구조화 데이터가 없다. 본문의 엔티티 설명과 실제 인용은 별도 확인한다."
                      if lang == "ko"
-                     else "No structured data declared — nothing tells AI what to call us.")
+                     else "No structured data declared. Entity descriptions and actual citations require separate checks.")
 
     rows = [
         [td("<strong>%s</strong>" % ("속성" if lang == "ko" else "Subject")),
@@ -653,10 +689,10 @@ def render(report: dict, lang: str) -> str:
 
     values = {
         "html_lang": "ko" if lang == "ko" else "en",
-        "doc_title": lab["doc_title"] % host,
+        "doc_title": escape(lab["doc_title"] % host),
         "eyebrow": lab["eyebrow"],
-        "meta_line": lab["meta"] % (report["generated_at"].replace("T", " "),
-                                    report["stats"]["pages_crawled"]),
+        "meta_line": escape(lab["meta"] % (report["generated_at"].replace("T", " "),
+                                    report["stats"]["pages_crawled"])),
         "theme_label": lab["theme"],
         "prev_label": lab["prev"], "next_label": lab["next"],
         "footer_note": lab["footer"],

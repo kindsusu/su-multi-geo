@@ -31,6 +31,8 @@ import json
 import os
 import shutil
 import sys
+import tempfile
+import math
 from collections import OrderedDict
 from datetime import date as _date, datetime, timedelta, timezone
 
@@ -44,6 +46,8 @@ AUDIT_SCHEMA_PREFIX = "su-multi-geo/audit/"
 
 REMEASURE_DAYS = 14      # ops/measure.md 3번 — 변경 후 14일 뒤 재측정
 STALE_DAYS = 30          # ops/measure.md 4번 — 이보다 오래된 기준선은 경고한다
+MIN_MEASURE_RUNS = 5
+MIN_RATE_DELTA = 0.10
 
 KINDS = ("audit", "measure", "verify")
 
@@ -83,6 +87,23 @@ def write_json(path: str, obj) -> None:
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(obj, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
+
+
+def atomic_write_json(path: str, obj) -> None:
+    """같은 디렉터리에 완성본을 쓴 뒤 교체한다."""
+    folder = os.path.dirname(os.path.abspath(path))
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".tmp-", suffix=".json", dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(obj, fh, ensure_ascii=False, indent=2)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 
 def sha256_of(path: str) -> str:
@@ -135,9 +156,53 @@ def measure_metrics(summary: dict) -> dict:
             slot = engine.get(qtype) or {}
             cited += slot.get("cited") or 0
             runs += slot.get("runs") or 0
-        out[qtype] = {"cited": cited, "runs": runs,
-                      "rate": round(cited / runs, 4) if runs else None}
+        errors = sum(((engine.get(qtype) or {}).get("errors") or 0)
+                     for engine in summary.get("engines") or [])
+        out[qtype] = {"cited": cited, "runs": runs, "errors": errors,
+                      "rate": round(cited / runs, 4) if runs else None,
+                      "wilson95": wilson_interval(cited, runs)}
     return out
+
+
+def wilson_interval(successes: int, total: int):
+    if not total:
+        return None
+    z = 1.959963984540054
+    p = successes / total
+    denom = 1 + z * z / total
+    center = (p + z * z / (2 * total)) / denom
+    spread = z * math.sqrt((p * (1 - p) + z * z / (4 * total)) / total) / denom
+    return [round(max(0, center - spread), 4), round(min(1, center + spread), 4)]
+
+
+def measure_cohort(summary: dict) -> dict:
+    """비교 가능성을 결정하는 측정 조건. v1은 legacy cohort로만 서로 비교한다."""
+    schema = summary.get("schema")
+    qset = summary.get("query_set") or {}
+    conditions = summary.get("conditions") or {}
+    cohort_rows = []
+    for cohort in summary.get("cohorts") or []:
+        cohort_rows.append({
+            "engine": cohort.get("engine"), "mode": cohort.get("mode"),
+            "surface": cohort.get("surface"), "locale": cohort.get("locale"),
+            "login_state": cohort.get("login_state"),
+            "search_enabled": cohort.get("search_enabled"), "model": cohort.get("model"),
+            "campaign_id": cohort.get("campaign_id"),
+            "queries": sorted(({"id": q.get("id"), "fingerprint": q.get("fingerprint"),
+                                 "observed": q.get("observed"), "attempts": q.get("attempts")}
+                                for q in cohort.get("queries") or []), key=lambda q: q["id"] or "")})
+    cohort_rows.sort(key=lambda c: tuple(str(c.get(k) or "") for k in
+                                         ("engine", "mode", "surface", "locale", "login_state",
+                                          "search_enabled", "model", "campaign_id")))
+    return {"schema_family": "v2" if schema == "su-multi-geo/measure/2" else "legacy-v1",
+            "query_set": qset.get("fingerprint"),
+            "scope": (summary.get("window") or {}).get("scope"),
+            "surfaces": conditions.get("surfaces"),
+            "modes": conditions.get("modes"),
+            "locales": conditions.get("locales"),
+            "login_states": conditions.get("login_states"),
+            "search_enabled": conditions.get("search_enabled"),
+            "cohorts": cohort_rows or None}
 
 
 def audit_line(audit: dict) -> str:
@@ -175,7 +240,12 @@ def index_path(outdir: str) -> str:
 def load_index(outdir: str, host: str = "") -> dict:
     path = index_path(outdir)
     if os.path.exists(path):
-        return load_json(path)
+        index = load_json(path)
+        if index.get("schema") != SCHEMA_HISTORY or not isinstance(index.get("snapshots"), list):
+            raise SystemExit("지원하지 않거나 손상된 history index: %s" % path)
+        if host and index.get("host") and index["host"].lower() != host.lower():
+            raise SystemExit("history host 불일치: %s != %s" % (index["host"], host))
+        return index
     return {"schema": SCHEMA_HISTORY, "host": host, "baseline_date": None,
             "next_due": None, "snapshots": []}
 
@@ -186,8 +256,12 @@ def sort_snapshots(index: dict) -> None:
 
 
 def refresh_due(index: dict) -> None:
-    dates = [s["date"] for s in index["snapshots"] if s.get("date")]
+    measured = [s["date"] for s in index["snapshots"]
+                if s.get("date") and s.get("kind") == "measure"]
+    dates = measured or [s["date"] for s in index["snapshots"] if s.get("date")]
     index["next_due"] = plus_days(max(dates), REMEASURE_DAYS) if dates else None
+    index["schedule"] = {"next_due": index["next_due"], "scheduled": False,
+                         "note": "날짜 계산값이며 외부 스케줄러 등록 상태가 아니다"}
 
 
 def find_snapshot(index: dict, kind: str, date_str: str):
@@ -207,7 +281,11 @@ def latest_on_or_before(index: dict, kind: str, date_str: str):
 
 
 def snapshot_json(outdir: str, snap: dict) -> dict:
-    return load_json(os.path.join(history_dir(outdir), snap["file"]))
+    path = os.path.join(history_dir(outdir), snap["file"])
+    actual = sha256_of(path)
+    if snap.get("sha256") and actual != snap["sha256"]:
+        raise SystemExit("스냅샷 sha256 불일치: %s" % path)
+    return load_json(path)
 
 
 # ─────────────────────────────────────────────────────────── snapshot
@@ -239,17 +317,30 @@ def store(outdir: str, index: dict, kind: str, src: str, date_str: str,
     return snap
 
 
+def validate_snapshot_payload(kind: str, payload: dict, host: str, src: str) -> None:
+    if not isinstance(payload, dict):
+        raise SystemExit("%s JSON 객체가 아니다: %s" % (kind, src))
+    schema = str(payload.get("schema") or "")
+    valid = ((kind == "audit" and schema.startswith("su-multi-geo/audit/")) or
+             (kind == "measure" and schema in ("su-multi-geo/measure/1",
+                                                 "su-multi-geo/measure/2")) or
+             (kind == "verify" and schema.startswith("su-multi-geo/verify/")))
+    if not valid:
+        raise SystemExit("%s 스키마가 아니다: %s (%s)" % (kind, schema or "없음", src))
+    payload_host = ((payload.get("target") or {}).get("host") or "").lower()
+    if host and payload_host and payload_host != host.lower():
+        raise SystemExit("%s host 불일치: %s != %s" % (kind, payload_host, host))
+
+
 def cmd_snapshot(args) -> int:
     outdir, host = resolve(args)
     date_str = args.date or today_str()
     if not parse_date(date_str):
         raise SystemExit("--date는 YYYY-MM-DD 형식이다: %s" % date_str)
 
-    audit = load_json(args.audit)
-    if not str(audit.get("schema", "")).startswith(AUDIT_SCHEMA_PREFIX):
-        raise SystemExit("audit.json이 아니다: %s" % args.audit)
-
     index = load_index(outdir, host)
+    if index.get("host") and host and index["host"].lower() != host.lower():
+        raise SystemExit("history host 불일치: %s != %s" % (index["host"], host))
     index["host"] = index.get("host") or host
     first_audit = not snapshots_of(index, "audit")
 
@@ -257,16 +348,64 @@ def cmd_snapshot(args) -> int:
     plan = [("audit", args.audit)]
     plan += [("measure", args.measure)] if args.measure else []
     plan += [("verify", args.verify)] if args.verify else []
+    payloads = {}
+    for kind, src in plan:
+        try:
+            payloads[kind] = load_json(src)
+        except (OSError, ValueError) as exc:
+            raise SystemExit("%s 입력을 읽을 수 없다: %s (%s)" %
+                             (kind, src, exc.__class__.__name__))
+        validate_snapshot_payload(kind, payloads[kind], host, src)
     for kind, _ in plan:
         guard_overwrite(index, kind, date_str, args.force)
 
-    made = [store(outdir, index, kind, src, date_str, args.label) for kind, src in plan]
+    # 모든 입력 검증 후에만 교체한다. 실패하면 기존 파일까지 원복한다.
+    os.makedirs(history_dir(outdir), exist_ok=True)
+    staged, backups, made = [], {}, []
+    try:
+        for kind, src in plan:
+            name = "%s-%s.json" % (kind, date_str)
+            dest = os.path.join(history_dir(outdir), name)
+            fd, tmp = tempfile.mkstemp(prefix=".stage-", suffix=".json", dir=history_dir(outdir))
+            os.close(fd)
+            shutil.copyfile(src, tmp)
+            if sha256_of(tmp) != sha256_of(src):
+                raise OSError("staged sha256 mismatch")
+            staged.append((kind, name, dest, tmp))
+        for kind, name, dest, tmp in staged:
+            if os.path.exists(dest):
+                backup = dest + ".rollback"
+                shutil.copyfile(dest, backup)
+                backups[dest] = backup
+            os.replace(tmp, dest)
+            snap = {"date": date_str, "kind": kind, "file": name,
+                    "sha256": sha256_of(dest), "label": args.label or None,
+                    "line": LINE_OF[kind](payloads[kind])}
+            existing = find_snapshot(index, kind, date_str)
+            if existing:
+                index["snapshots"][index["snapshots"].index(existing)] = snap
+            else:
+                index["snapshots"].append(snap)
+            made.append(snap)
 
-    if first_audit or args.baseline:
-        index["baseline_date"] = date_str
-    sort_snapshots(index)
-    refresh_due(index)
-    write_json(index_path(outdir), index)
+        if first_audit or args.baseline:
+            index["baseline_date"] = date_str
+        sort_snapshots(index)
+        refresh_due(index)
+        atomic_write_json(index_path(outdir), index)
+    except Exception:
+        for _, _, dest, tmp in staged:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            if dest in backups:
+                os.replace(backups[dest], dest)
+            elif os.path.exists(dest):
+                os.remove(dest)
+        raise
+    finally:
+        for backup in backups.values():
+            if os.path.exists(backup):
+                os.remove(backup)
 
     print("")
     print("스냅샷 저장: %s" % history_dir(outdir))
@@ -333,6 +472,25 @@ def compare_metrics(before: dict, after: dict) -> tuple:
 def compare_measure(before: dict, after: dict) -> dict:
     """두 summary.json(su-multi-geo/measure/1)의 인용 드리프트."""
     bm, am = measure_metrics(before), measure_metrics(after)
+    bc, ac = measure_cohort(before), measure_cohort(after)
+    comparable = bc == ac
+    reasons = [] if comparable else ["질의 세트 또는 surface/mode/locale/login/search 조건이 다르다"]
+    if (bc["schema_family"] == "v2" or ac["schema_family"] == "v2") and (
+            not bc.get("query_set") or not ac.get("query_set") or
+            not bc.get("cohorts") or not ac.get("cohorts")):
+        comparable = False
+        reasons.append("v2 비교에 필요한 query-set 또는 상세 cohort 표본 구성이 없다")
+    bq, aq = before.get("quality") or {}, after.get("quality") or {}
+    if ((bq and bq.get("regression_eligible") is not True) or
+            (aq and aq.get("regression_eligible") is not True) or
+            bq.get("errors") or aq.get("errors") or bq.get("unmeasured") or aq.get("unmeasured") or
+            bq.get("incompatible_rows") or aq.get("incompatible_rows")):
+        comparable = False
+        reasons.append("오류·미측정 또는 질의 fingerprint 불일치가 있는 측정 회차다")
+    if ((before.get("window") or {}).get("scope") == "cumulative" or
+            (after.get("window") or {}).get("scope") == "cumulative"):
+        comparable = False
+        reasons.append("누적 보고서는 배포 전후 단일 회차 회귀 판정에 사용할 수 없다")
 
     engines = []
     b_eng = {e["engine"]: e for e in before.get("engines") or []}
@@ -360,6 +518,8 @@ def compare_measure(before: dict, after: dict) -> dict:
     a_comp = {c["domain"]: c["count"] for c in ((after.get("urls") or {}).get("competitors") or [])}
 
     return {
+        "comparison": {"status": "comparable" if comparable else "inconclusive",
+                       "reasons": reasons, "before_cohort": bc, "after_cohort": ac},
         "totals": {"before": bm, "after": am},
         "engines": engines,
         "ours": ours,
@@ -404,12 +564,23 @@ def build_drift(outdir: str, host: str, index: dict, from_date: str, to_date: st
         measure_diff["to"] = am_snap["date"]
         br = measure_diff["totals"]["before"]["nonbrand"]["rate"]
         ar = measure_diff["totals"]["after"]["nonbrand"]["rate"]
+        comparison = measure_diff.get("comparison") or {}
         if br is not None and ar is not None:
             item = {"code": "nonbrand_rate", "label": "비브랜드 인용률",
                     "before": br, "after": ar, "delta": round((ar - br) * 100, 1),
                     "message": "비브랜드 인용률 %.1f%% → %.1f%% (%+.1f포인트)"
                                % (br * 100, ar * 100, (ar - br) * 100)}
-            if ar < br:
+            b_runs = measure_diff["totals"]["before"]["nonbrand"]["runs"]
+            a_runs = measure_diff["totals"]["after"]["nonbrand"]["runs"]
+            meaningful = abs(ar - br) >= MIN_RATE_DELTA and min(b_runs, a_runs) >= MIN_MEASURE_RUNS
+            item["policy"] = {"min_runs": MIN_MEASURE_RUNS, "min_delta_points": MIN_RATE_DELTA * 100,
+                              "meaningful": meaningful,
+                              "before_wilson95": measure_diff["totals"]["before"]["nonbrand"]["wilson95"],
+                              "after_wilson95": measure_diff["totals"]["after"]["nonbrand"]["wilson95"]}
+            if comparison.get("status") != "comparable" or not meaningful:
+                item["status"] = "inconclusive"
+                flat.append(item)
+            elif ar < br:
                 regressions.append(item)
             elif ar > br:
                 improvements.append(item)
@@ -456,6 +627,8 @@ def build_drift(outdir: str, host: str, index: dict, from_date: str, to_date: st
         "improvements": improvements,
         "unchanged": flat,
         "next_due": index.get("next_due"),
+        "schedule": index.get("schedule") or {"next_due": index.get("next_due"),
+                                               "scheduled": False},
         "exit_code": 1 if regressions else 0,
     }
 
@@ -628,6 +801,8 @@ def cmd_status(args) -> int:
             print(" 다음 재측정   : %s (%d일 남음)" % (due.isoformat(), left))
     else:
         print(" 다음 재측정   : 미정")
+    scheduled = (index.get("schedule") or {}).get("scheduled")
+    print(" 일정 등록 상태 : %s" % ("등록됨" if scheduled else "미등록 (위 날짜는 계산값)"))
 
     print("")
     for snap in index["snapshots"]:

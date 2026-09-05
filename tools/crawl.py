@@ -19,6 +19,8 @@
 from __future__ import annotations
 
 import argparse
+import gzip
+import io
 import json
 import os
 import re
@@ -29,6 +31,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from collections import Counter, deque
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -36,13 +39,13 @@ from html.parser import HTMLParser
 UA = "su-multi-geo-audit/2.0"
 SCHEMA = "su-multi-geo/audit/1"
 TIMEOUT = 15
+MAX_BODY = 4_000_000
 
 # GEO 레인 — 생성 엔진 크롤러. Google-Extended는 UA가 아니라 robots 토큰이다.
-AI_UAS = [
-    "GPTBot", "OAI-SearchBot", "ChatGPT-User",
-    "ClaudeBot", "Claude-SearchBot", "Claude-User",
-    "PerplexityBot", "Perplexity-User", "Google-Extended",
-]
+TRAINING_UAS = ["GPTBot", "ClaudeBot", "Google-Extended"]
+SEARCH_UAS = ["OAI-SearchBot", "Claude-SearchBot", "PerplexityBot", "Googlebot", "Bingbot"]
+USER_FETCH_UAS = ["ChatGPT-User", "Claude-User", "Perplexity-User"]
+AI_UAS = TRAINING_UAS + SEARCH_UAS + USER_FETCH_UAS
 # NEO 레인 — 한국 검색 크롤러.
 NEO_UAS = ["Yeti", "Daumoa"]
 ALL_UAS = AI_UAS + NEO_UAS
@@ -67,24 +70,25 @@ LEN_DESC = {"ko": (70, 80), "en": (150, 160)}
 def parse_robots(raw: str):
     """robots.txt를 (agents, rules) 그룹 목록으로 쪼갠다.
 
-    audit.sh의 awk POLICY와 같은 그룹핑 규칙: 규칙이 나온 뒤 User-agent 줄이
-    다시 나오면 새 그룹으로 본다. 주석은 제거하지 않는다(awk판과 동일).
+    규칙이 나온 뒤 User-agent 줄이 다시 나오면 새 그룹으로 본다. 주석은
+    제거하고 User-agent만 대소문자 비구분으로 처리한다.
     """
     groups = []
     agents: list[str] = []
     rules: list[tuple[str, bool]] = []
     saw_rule = False
     for raw_line in (raw or "").split("\n"):
-        line = raw_line.rstrip("\r").lower().lstrip()
-        if line.startswith("user-agent:"):
+        line = raw_line.rstrip("\r").split("#", 1)[0].strip()
+        lower = line.lower()
+        if lower.startswith("user-agent:"):
             if saw_rule:
                 groups.append((agents, rules))
                 agents, rules, saw_rule = [], [], False
-            agents.append(line[len("user-agent:"):].strip())
-        elif re.match(r"^(dis)?allow:", line):
+            agents.append(line[len("user-agent:"):].strip().lower())
+        elif re.match(r"^(dis)?allow:", lower):
             saw_rule = True
-            is_allow = line.startswith("allow:")
-            path = re.sub(r"^(dis)?allow:\s*", "", line).strip()
+            is_allow = lower.startswith("allow:")
+            path = re.sub(r"^(dis)?allow:\s*", "", line, flags=re.I).strip()
             rules.append((path, is_allow))
     if agents or rules:
         groups.append((agents, rules))
@@ -98,22 +102,22 @@ def robots_policy(raw: str, ua: str) -> str:
           |star-allow|star-block|star-partial|none
     """
     target = ua.lower()
-    verdict: dict[str, str] = {}
-    for agents, rules in parse_robots(raw):
-        for path, is_allow in rules:
-            for agent in agents:
-                key = "e" if agent == target else ("s" if agent == "*" else "")
-                if not key or key in verdict:
-                    continue
-                if is_allow:
-                    verdict[key] = "allow" if path in ("/", "") else "partial"
-                else:
-                    verdict[key] = "block" if path == "/" else ("allow" if path == "" else "partial")
-    if "e" in verdict:
-        return "explicit-" + verdict["e"]
-    if "s" in verdict:
-        return "star-" + verdict["s"]
-    return "none"
+    groups = parse_robots(raw)
+    exact = [rules for agents, rules in groups if target in agents]
+    selected = exact or [rules for agents, rules in groups if "*" in agents]
+    if not selected:
+        return "none"
+    prefix = "explicit-" if exact else "star-"
+    rules = [rule for group in selected for rule in group]
+    root_allowed = crawl_allowed(rules, "/")
+    meaningful = [(p, a) for p, a in rules if p]
+    if not root_allowed:
+        if any(is_allow and path for path, is_allow in meaningful):
+            return prefix + "partial"
+        return prefix + "block"
+    if any(p not in ("/", "") for p, _ in meaningful):
+        return prefix + "partial"
+    return prefix + "allow"
 
 
 def crawl_rules(raw: str, ua: str):
@@ -121,25 +125,28 @@ def crawl_rules(raw: str, ua: str):
     target = ua.lower()
     exact: list[tuple[str, bool]] = []
     star: list[tuple[str, bool]] = []
+    has_exact = False
     for agents, rules in parse_robots(raw):
         if target in agents:
+            has_exact = True
             exact.extend(rules)
         if "*" in agents:
             star.extend(rules)
-    return exact or star
+    return exact if has_exact else star
 
 
 def crawl_allowed(rules, path: str) -> bool:
-    """접두사 최장일치. 같은 길이면 Allow가 이긴다.
-
-    ponytail: robots의 `*`·`$` 와일드카드는 무시하고 리터럴 접두사만 본다 —
-    와일드카드가 필요하면 fnmatch 변환으로 올린다.
-    """
+    """가장 구체적인 robots 규칙을 적용한다. 같은 길이면 Allow가 이긴다."""
     best = None  # (len, is_allow)
     for rule_path, is_allow in rules:
-        if not rule_path or not path.startswith(rule_path):
+        if not rule_path:
             continue
-        n = len(rule_path)
+        anchored = rule_path.endswith("$")
+        source = rule_path[:-1] if anchored else rule_path
+        pattern = "^" + re.escape(source).replace(r"\*", ".*") + ("$" if anchored else "")
+        if not re.search(pattern, path):
+            continue
+        n = len(source.replace("*", ""))
         if best is None or n > best[0] or (n == best[0] and is_allow):
             best = (n, is_allow)
     return best[1] if best else True
@@ -148,21 +155,49 @@ def crawl_allowed(rules, path: str) -> bool:
 # ─────────────────────────────────────────────────────────── HTTP
 
 class _CountingRedirect(urllib.request.HTTPRedirectHandler):
-    def __init__(self):
+    def __init__(self, origin_host, rules=None):
         self.count = 0
+        self.origin_host = origin_host
+        self.rules = rules
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         self.count += 1
+        parts = urllib.parse.urlsplit(newurl)
+        if self.count > 10 or parts.scheme not in ("http", "https") or parts.netloc.lower() != self.origin_host:
+            return None
+        target = (parts.path or "/") + (("?" + parts.query) if parts.query else "")
+        if self.rules is not None and not crawl_allowed(self.rules, target):
+            return None
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def fetch(url: str, method: str = "GET"):
+def _response_headers(message) -> dict:
+    """HTTPMessage를 소문자 dict로 바꾸되 반복 X-Robots-Tag를 모두 보존한다."""
+    if message is None:
+        return {}
+    out = {}
+    seen = set()
+    for original in message.keys():
+        key = original.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        values = message.get_all(original) or []
+        values = [str(value).strip() for value in values if value is not None]
+        if not values:
+            continue
+        # 줄마다 UA scope가 새로 시작할 수 있으므로 X-Robots-Tag의 필드 경계를 남긴다.
+        out[key] = "\n".join(values) if key == "x-robots-tag" else ", ".join(values)
+    return out
+
+
+def fetch(url: str, method: str = "GET", rules=None):
     """한 번 받아온다. 예외를 던지지 않고 dict로 돌려준다."""
     out = {
         "status": None, "final_url": url, "headers": {}, "body": "",
         "ms": 0, "redirects": 0, "error": None, "content_type": "",
     }
-    redirector = _CountingRedirect()
+    redirector = _CountingRedirect(host_of(url), rules)
     opener = urllib.request.build_opener(redirector)
     req = urllib.request.Request(url, method=method, headers={
         "User-Agent": UA,
@@ -172,10 +207,10 @@ def fetch(url: str, method: str = "GET"):
     started = time.monotonic()
     try:
         with opener.open(req, timeout=TIMEOUT) as resp:
-            body = resp.read(4_000_000)
+            body = resp.read(MAX_BODY + 1)
             out["status"] = resp.status
             out["final_url"] = resp.geturl()
-            out["headers"] = {k.lower(): v for k, v in resp.headers.items()}
+            out["headers"] = _response_headers(resp.headers)
     except urllib.error.HTTPError as exc:
         body = b""
         try:
@@ -184,16 +219,49 @@ def fetch(url: str, method: str = "GET"):
             pass
         out["status"] = exc.code
         out["final_url"] = exc.url or url
-        out["headers"] = {k.lower(): v for k, v in (exc.headers or {}).items()}
+        out["headers"] = _response_headers(exc.headers)
+        location = out["headers"].get("location")
+        if exc.code in (301, 302, 303, 307, 308) and location:
+            redirected = urllib.parse.urljoin(url, location)
+            parts = urllib.parse.urlsplit(redirected)
+            target = (parts.path or "/") + (("?" + parts.query) if parts.query else "")
+            if host_of(redirected) != host_of(url):
+                out["final_url"] = redirected
+                out["error"] = "external_redirect_blocked"
+            elif rules is not None and not crawl_allowed(rules, target):
+                out["final_url"] = redirected
+                out["error"] = "redirect_blocked_by_robots"
     except (urllib.error.URLError, socket.timeout, ssl.SSLError, OSError) as exc:
         out["ms"] = int((time.monotonic() - started) * 1000)
         out["error"] = _classify_error(exc)
         return out
     out["ms"] = int((time.monotonic() - started) * 1000)
     out["redirects"] = redirector.count
+    input_truncated = len(body) > MAX_BODY
+    if input_truncated:
+        body = body[:MAX_BODY]
+        out["error"] = out["error"] or "body_truncated"
+    if not input_truncated and (out["headers"].get("content-encoding", "").lower() == "gzip" or
+            urllib.parse.urlsplit(url).path.lower().endswith(".gz")):
+        try:
+            body, expanded_truncated = _bounded_gunzip(body, MAX_BODY)
+            if expanded_truncated:
+                out["error"] = out["error"] or "body_truncated"
+        except (OSError, EOFError):
+            out["error"] = "invalid_gzip"
+            body = b""
     out["content_type"] = out["headers"].get("content-type", "")
+    out["truncated"] = input_truncated or len(body) > MAX_BODY or out["error"] == "body_truncated"
+    body = body[:MAX_BODY]
     out["body"] = _decode(body, out["content_type"])
     return out
+
+
+def _bounded_gunzip(body: bytes, limit: int) -> tuple[bytes, bool]:
+    """압축 폭탄이 메모리를 무제한 소비하지 않도록 limit+1 바이트만 푼다."""
+    with gzip.GzipFile(fileobj=io.BytesIO(body)) as stream:
+        expanded = stream.read(limit + 1)
+    return expanded[:limit], len(expanded) > limit
 
 
 def _classify_error(exc) -> str:
@@ -230,6 +298,7 @@ class PageParser(HTMLParser):
         self.title = None
         self.meta_description = None
         self.meta_robots = None
+        self.meta_googlebot = None
         self.canonical = None
         self.lang = None
         self.naver_site_verification = False
@@ -279,8 +348,10 @@ class PageParser(HTMLParser):
         content = a.get("content") or ""
         if name == "description" and self.meta_description is None:
             self.meta_description = content
-        elif name == "robots" and self.meta_robots is None:
-            self.meta_robots = content
+        elif name == "robots":
+            self.meta_robots = ", ".join(filter(None, (self.meta_robots, content))) or None
+        elif name in ("googlebot", "googlebot-news"):
+            self.meta_googlebot = ", ".join(filter(None, (self.meta_googlebot, content))) or None
         elif name == "naver-site-verification":
             self.naver_site_verification = True
         elif name.startswith("og:"):
@@ -364,11 +435,11 @@ def jsonld_types(blocks) -> list:
 # ─────────────────────────────────────────────────────────── URL 정규화
 
 def normalize(url: str) -> str:
-    """쿼리스트링·프래그먼트를 떼고 스킴·호스트를 소문자로."""
+    """프래그먼트만 떼고 스킴·호스트를 소문자로. query는 보존한다."""
     parts = urllib.parse.urlsplit(url)
     path = parts.path or "/"
     return urllib.parse.urlunsplit((
-        parts.scheme.lower(), parts.netloc.lower(), path, "", "",
+        parts.scheme.lower(), parts.netloc.lower(), path, parts.query, "",
     ))
 
 
@@ -405,19 +476,34 @@ def script_of(text: str) -> str:
 
 # ─────────────────────────────────────────────────────────── 크롤
 
-def crawl_site(base: str, max_pages: int, delay: float, rules) -> list:
+def crawl_site(base: str, max_pages: int, delay: float, rules, seeds=None, coverage=None) -> list:
     host = host_of(base)
-    seen = {normalize(base)}
-    queue = deque([normalize(base)])
+    seen = set()
+    queue = deque()
+    blocked_count = 0
+    blocked_seeds = 0
+    dropped_discoveries = 0
+    seed_list = list(dict.fromkeys([normalize(base)] + [normalize(u) for u in (seeds or [])]))
+    for seed in seed_list:
+        parts = urllib.parse.urlsplit(seed)
+        target = (parts.path or "/") + (("?" + parts.query) if parts.query else "")
+        if host_of(seed) != host or not is_page(seed) or not crawl_allowed(rules, target):
+            blocked_count += 1
+            blocked_seeds += 1
+            continue
+        if seed not in seen:
+            seen.add(seed)
+            queue.append(seed)
     pages = []
     while queue and len(pages) < max_pages:
         url = queue.popleft()
-        res = fetch(url)
+        res = fetch(url, rules=rules)
         page = page_record(url, res)
         pages.append(page)
         sys.stderr.write("  · %-4s %s\n" % (page["status"] or "ERR", url))
         sys.stderr.flush()
-        for href in page.pop("_links", []):
+        links = page.pop("_links", []) if page["status"] == 200 and host_of(res["final_url"] or url) == host else []
+        for href in links:
             try:
                 nxt = normalize(urllib.parse.urljoin(res["final_url"] or url, href))
             except ValueError:
@@ -426,13 +512,39 @@ def crawl_site(base: str, max_pages: int, delay: float, rules) -> list:
                 continue
             if host_of(nxt) != host or nxt in seen or not is_page(nxt):
                 continue
-            if not crawl_allowed(rules, urllib.parse.urlsplit(nxt).path):
+            parts = urllib.parse.urlsplit(nxt)
+            target = (parts.path or "/") + (("?" + parts.query) if parts.query else "")
+            if not crawl_allowed(rules, target):
+                blocked_count += 1
                 continue
             seen.add(nxt)
             if len(seen) <= max_pages * 4:
                 queue.append(nxt)
+            else:
+                dropped_discoveries += 1
         if delay:
             time.sleep(delay)
+    if coverage is not None:
+        network_errors = sum(1 for p in pages if p.get("error") or p.get("status") is None)
+        http_errors = sum(1 for p in pages if p.get("status") is not None and p.get("status", 0) >= 400)
+        reasons = []
+        if queue:
+            reasons.append("max_pages_reached")
+        if dropped_discoveries:
+            reasons.append("discovery_queue_truncated")
+        # 내부 링크의 의도적 제외는 정상 robots 정책이다. 시작 URL 또는
+        # sitemap의 색인 후보를 검사하지 못했을 때만 범위 불완전으로 본다.
+        if blocked_seeds:
+            reasons.append("seed_blocked_by_robots")
+        if network_errors:
+            reasons.append("network_errors")
+        if http_errors:
+            reasons.append("http_errors")
+        if not pages:
+            reasons.append("no_pages_fetched")
+        coverage.update({"complete": not reasons, "max_pages": max_pages,
+                         "pages_fetched": len(pages), "queued_remaining": len(queue),
+                         "blocked_count": blocked_count, "reasons": reasons})
     return pages
 
 
@@ -441,7 +553,7 @@ def page_record(url: str, res: dict) -> dict:
         "url": url,
         "status": res["status"],
         "final_url": res["final_url"],
-        "title": None, "meta_description": None, "meta_robots": None,
+        "title": None, "meta_description": None, "meta_robots": None, "meta_googlebot": None,
         "x_robots_tag": res["headers"].get("x-robots-tag"),
         "canonical": None, "h1": [], "jsonld_count": 0, "jsonld_types": [],
         "text_chars": 0, "og": {}, "naver_site_verification": False,
@@ -463,6 +575,7 @@ def page_record(url: str, res: dict) -> dict:
         "title": parser.title,
         "meta_description": parser.meta_description,
         "meta_robots": parser.meta_robots,
+        "meta_googlebot": parser.meta_googlebot,
         "canonical": parser.canonical,
         "h1": parser.h1,
         "jsonld_count": count,
@@ -478,27 +591,57 @@ def page_record(url: str, res: dict) -> dict:
 
 # ─────────────────────────────────────────────────────────── 사이트 수준
 
-def probe_site(base: str, robots_raw: str, robots_status, crawled: list) -> dict:
+def probe_site(base: str, robots_raw: str, robots_status, crawled: list, sitemap_data=None) -> dict:
     host = host_of(base)
     declared = [
         m.strip() for m in
         re.findall(r"(?im)^\s*sitemap:\s*(\S+)", robots_raw or "")
     ]
-    sitemaps, sitemap_urls = read_sitemaps(base, host, declared)
+    sitemaps, sitemap_urls = sitemap_data or read_sitemaps(base, host, declared)
 
-    crawl_set = {p["url"] for p in crawled if p["status"] == 200}
+    crawl_set = set()
+    excluded_noindex = []
+    excluded_noncanonical = []
+    for page in crawled:
+        if page["status"] != 200:
+            continue
+        effective = normalize(page.get("final_url") or page["url"])
+        if host_of(effective) != host:
+            continue
+        if _noindex(page) or not page.get("intended_indexable", True):
+            excluded_noindex.append(effective)
+            continue
+        canonical = page.get("canonical")
+        if canonical:
+            resolved = normalize(urllib.parse.urljoin(effective, canonical))
+            if resolved.rstrip("/") != effective.rstrip("/"):
+                excluded_noncanonical.append(effective)
+                continue
+        crawl_set.add(effective)
     sm_set = {normalize(u) for u in sitemap_urls if host_of(u) == host}
     mismatch = {
-        "only_in_sitemap": sorted(sm_set - crawl_set)[:100],
-        "only_in_crawl": sorted(crawl_set - sm_set)[:100] if sm_set else [],
+        "only_in_sitemap": sorted(sm_set - crawl_set),
+        "only_in_crawl": sorted(crawl_set - sm_set) if sm_set else [],
+        "excluded_noindex": sorted(set(excluded_noindex)),
+        "excluded_noncanonical": sorted(set(excluded_noncanonical)),
     }
+
+    audit_rules = crawl_rules(robots_raw or "", UA.split("/")[0])
+
+    def allowed_fetch(url):
+        parts = urllib.parse.urlsplit(url)
+        target = (parts.path or "/") + (("?" + parts.query) if parts.query else "")
+        if not crawl_allowed(audit_rules, target):
+            return {"status": None, "final_url": url, "headers": {}, "body": "", "ms": 0,
+                    "redirects": 0, "error": "robots_blocked", "content_type": ""}
+        return fetch(url, rules=audit_rules)
 
     llms = {}
     for name in ("llms.txt", "llms-full.txt"):
-        llms[name] = fetch("%s/%s" % (base, name))["status"]
+        llms[name] = allowed_fetch("%s/%s" % (base, name))["status"]
 
-    home = fetch(base)
-    probe = fetch("%s/__multi_geo_404_probe__" % base)
+    home = allowed_fetch(base)
+    probe = allowed_fetch("%s/__multi_geo_404_probe__" % base)
     alt_host = alt_host_of(host)
     if alt_host is None:
         alt = {"error": None, "status": None, "final_url": None, "redirects": 0}
@@ -516,11 +659,12 @@ def probe_site(base: str, robots_raw: str, robots_status, crawled: list) -> dict
         "robots": {
             "status": robots_status,
             "present": bool(robots_raw),
-            "raw": (robots_raw or "")[:8000],
+            "raw": robots_raw or "",
             "policies": {ua: robots_policy(robots_raw or "", ua) for ua in ALL_UAS},
             "sitemap_declared": declared,
         },
         "sitemaps": sitemaps,
+        "sitemap_urls": sorted(sm_set),
         "sitemap_vs_crawl": mismatch,
         "llms": llms,
         "hygiene": {
@@ -540,7 +684,7 @@ def probe_site(base: str, robots_raw: str, robots_status, crawled: list) -> dict
 def sitemap_candidates(base: str, host: str, declared: list) -> list:
     """robots.txt가 준 값을 그대로 믿지 않는다 — http(s) + 진단 대상 호스트만 남긴다(SSRF 방지)."""
     candidates = []
-    for url in list(declared)[:3] + ["%s/sitemap.xml" % base, "%s/sitemap_index.xml" % base]:
+    for url in list(declared) + ["%s/sitemap.xml" % base, "%s/sitemap_index.xml" % base]:
         if not url.startswith(("http://", "https://")) or host_of(url) != host:
             continue
         if url not in candidates:
@@ -555,26 +699,49 @@ def read_sitemaps(base: str, host: str, declared: list):
     urls = []
     queue = deque(candidates)
     seen = set()
-    while queue and len(results) < 12:
+    limit = 100
+    while queue and len(results) < limit:
         url = queue.popleft()
         if url in seen:
             continue
         seen.add(url)
         res = fetch(url)
-        locs = re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", res["body"] or "")
-        is_index = bool(re.search(r"<sitemapindex", res["body"] or "", re.I))
+        locs, is_index, parsed, parse_error = [], False, False, None
+        if res["status"] == 200 and not res.get("error"):
+            try:
+                root = ET.fromstring(res["body"] or "")
+                kind = root.tag.rsplit("}", 1)[-1].lower()
+                if kind not in ("urlset", "sitemapindex"):
+                    raise ValueError("root element is %s" % kind)
+                is_index = kind == "sitemapindex"
+                locs = [((node.text or "").strip()) for node in root.iter()
+                        if node.tag.rsplit("}", 1)[-1].lower() == "loc" and (node.text or "").strip()]
+                parsed = True
+            except (ET.ParseError, ValueError) as exc:
+                parse_error = str(exc)
         results.append({
             "url": url, "status": res["status"],
-            "is_index": is_index, "url_count": len(locs),
+            "is_index": is_index, "url_count": len(locs), "parsed": parsed,
+            "truncated": bool(res.get("truncated")) or (is_index and len(locs) > 100),
+            "error": res.get("error") or parse_error,
         })
-        if res["status"] != 200:
+        if res["status"] != 200 or not parsed:
             continue
         if is_index:
-            for child in locs[:10]:
+            for child in locs[:100]:
                 if child.startswith(("http://", "https://")) and host_of(child) == host:
                     queue.append(child)
         else:
             urls.extend(locs)
+    if queue:
+        pending = []
+        while queue:
+            url = queue.popleft()
+            if url not in seen and url not in pending:
+                pending.append(url)
+        results.extend({"url": url, "status": None, "is_index": False, "url_count": 0,
+                        "parsed": False, "truncated": True, "error": "inspection_limit"}
+                       for url in pending)
     return results, urls
 
 
@@ -609,16 +776,58 @@ def analyze(base: str, site: dict, pages: list) -> tuple:
 
 
 def _noindex(page) -> bool:
-    blob = "%s %s" % (page.get("meta_robots") or "", page.get("x_robots_tag") or "")
-    return "noindex" in blob.lower()
+    return "noindex" in _robots_directives(page)
+
+
+def _robots_directives(page, ua="googlebot") -> set[str]:
+    """페이지 수준 지시를 토큰화한다. generic과 해당 UA 지시는 합산한다."""
+    values = [page.get("meta_robots") or ""]
+    if ua.startswith("googlebot"):
+        values.append(page.get("meta_googlebot") or "")
+    header = page.get("x_robots_tag") or ""
+    scope_pattern = re.compile(r"^\s*([\w-]+(?:bot|user))\s*:\s*(.*)$", re.I)
+    for line in header.splitlines():
+        active_scope = None
+        for segment in line.split(","):
+            scoped = scope_pattern.match(segment)
+            if scoped:
+                active_scope = scoped.group(1).lower()
+                directive = scoped.group(2)
+            else:
+                directive = segment
+            if active_scope is None or active_scope == ua.lower():
+                values.append(directive)
+    tokens = set()
+    for value in values:
+        normalized = re.sub(r"\s*:\s*", ":", value.lower())
+        for token in re.split(r"[,;\s]+", normalized):
+            if token:
+                tokens.add(token)
+    if "none" in tokens:
+        tokens.update(("noindex", "nofollow"))
+    return tokens
 
 
 def _check_indexability(findings, ok):
-    noindex = [p["url"] for p in ok if _noindex(p)]
+    noindex = [p["url"] for p in ok if _noindex(p) and p.get("intended_indexable", True)]
+    intentional = [p["url"] for p in ok if _noindex(p) and not p.get("intended_indexable", True)]
     if noindex:
         add(findings, "SEO", "critical", "NOINDEX",
-            "noindex가 %d개 페이지에 걸려 있다 — 다른 모든 최적화가 무효다." % len(noindex),
+            "noindex가 %d개 페이지에 있다 — 해당 페이지가 의도한 비색인 대상인지 확인한다." % len(noindex),
             noindex, {"count": len(noindex)})
+    if intentional:
+        add(findings, "SEO", "info", "INTENTIONAL_NOINDEX",
+            "의도적으로 비색인 처리한 페이지가 %d개다." % len(intentional), intentional,
+            {"count": len(intentional)})
+    restricted = []
+    for page in ok:
+        directives = _robots_directives(page)
+        if "nosnippet" in directives or "max-snippet:0" in directives:
+            restricted.append(page["url"])
+    if restricted:
+        add(findings, "AEO", "warn", "SNIPPET_RESTRICTED",
+            "검색·AI 답변용 snippet을 막은 페이지가 %d개다." % len(restricted), restricted,
+            {"count": len(restricted)})
 
 
 def _check_meta(findings, ok, total):
@@ -628,7 +837,7 @@ def _check_meta(findings, ok, total):
         affected = sum(dup_titles.values())
         urls = [p["url"] for p in ok if p["title"] in dup_titles]
         add(findings, "SEO", "warn", "TITLE_DUPLICATE",
-            "같은 title을 쓰는 페이지가 %d개다 (%d%%) — 중복 콘텐츠로 묶인다."
+            "같은 title을 쓰는 페이지가 %d개다 (%d%%) — 검색결과에서 페이지를 구분하기 어려울 수 있다."
             % (affected, round(affected * 100 / total)),
             urls, {"groups": len(dup_titles), "pages": affected,
                    "ratio": round(affected / total, 3)})
@@ -651,7 +860,7 @@ def _check_meta(findings, ok, total):
             short_title.append(page["url"])
     if long_title:
         add(findings, "SEO", "info", "TITLE_TOO_LONG",
-            "권장 길이(한글 25~30 · 영문 50~60)를 넘는 title이 %d개다 — 검색결과에서 잘린다."
+            "권장 길이(한글 25~30 · 영문 50~60)를 넘는 title이 %d개다 — 기기와 표시 폭에 따라 잘릴 수 있다."
             % len(long_title), long_title, {"count": len(long_title)})
     if short_title:
         add(findings, "SEO", "warn", "TITLE_TOO_SHORT",
@@ -701,8 +910,8 @@ def _check_structure(findings, ok, total):
     no_ld = [p["url"] for p in ok if not p["jsonld_count"]]
     if no_ld:
         ratio = len(no_ld) / total
-        add(findings, "AEO", "critical" if ratio > 0.8 else "warn", "JSONLD_MISSING",
-            "JSON-LD가 한 건도 없는 페이지가 %d개다 (%d%%)."
+        add(findings, "AEO", "info", "JSONLD_MISSING",
+            "JSON-LD가 없는 페이지가 %d개다 (%d%%) — 페이지 성격에 맞으면 추가를 검토한다."
             % (len(no_ld), round(ratio * 100)), no_ld,
             {"count": len(no_ld), "ratio": round(ratio, 3)})
 
@@ -710,16 +919,16 @@ def _check_structure(findings, ok, total):
     for page in ok:
         all_types.update(page["jsonld_types"])
     if not any(t in all_types for t in ("FAQPage", "QAPage")):
-        add(findings, "AEO", "warn", "FAQ_MISSING",
-            "FAQPage/QAPage JSON-LD가 한 건도 없다 — 답변 박스에 뽑힐 표면이 없다.",
+        add(findings, "AEO", "info", "FAQ_MISSING",
+            "FAQPage/QAPage JSON-LD가 없다 — 실제 문답 콘텐츠가 있는 경우에만 추가를 검토한다.",
             [], {"types_found": dict(all_types)})
 
     org_pages = [p["url"] for p in ok
                  if any(t in ("Organization", "LocalBusiness", "Corporation")
                         for t in p["jsonld_types"])]
     if not org_pages:
-        add(findings, "LLMO", "warn", "ORG_JSONLD_MISSING",
-            "Organization/LocalBusiness JSON-LD가 없다 — 엔티티를 붙잡을 앵커가 없다.",
+        add(findings, "LLMO", "info", "ORG_JSONLD_MISSING",
+            "Organization/LocalBusiness JSON-LD가 없다 — 조직 사이트라면 명확한 엔티티 정보 추가를 검토한다.",
             [], {})
     elif len(org_pages) > 1:
         add(findings, "LLMO", "info", "ORG_JSONLD_SCATTERED",
@@ -761,7 +970,7 @@ def _check_structure(findings, ok, total):
     thin = [p["url"] for p in ok if p["text_chars"] < 300]
     if thin:
         add(findings, "SEO", "critical" if len(thin) / total > 0.5 else "warn", "THIN_TEXT",
-            "본문 텍스트가 300자 미만인 페이지가 %d개다 — CSR(클라이언트 렌더) 의심."
+            "원시 HTML의 본문 텍스트가 300자 미만인 페이지가 %d개다 — 페이지 목적과 렌더링 결과를 별도 확인한다."
             % len(thin), thin, {"count": len(thin)})
 
 
@@ -781,10 +990,10 @@ def _check_site(findings, base, site, ok):
         add(findings, "SEO", "warn", "SITEMAP_NOT_DECLARED",
             "robots.txt에 Sitemap: 선언이 없다.", ["%s/robots.txt" % base], {})
 
-    live = [s for s in site["sitemaps"] if s["status"] == 200]
+    live = [s for s in site["sitemaps"] if s["status"] == 200 and s.get("parsed", True)]
     if not live:
-        add(findings, "SEO", "critical", "SITEMAP_MISSING",
-            "접근 가능한 사이트맵이 없다 — 색인 대상 목록을 검색엔진에 주지 않고 있다.",
+        add(findings, "SEO", "warn", "SITEMAP_MISSING",
+            "접근 가능한 사이트맵이 없다 — 필수 색인 조건은 아니지만 URL 발견과 갱신 전달에 유용하다.",
             [s["url"] for s in site["sitemaps"]], {})
     else:
         only_sm = site["sitemap_vs_crawl"]["only_in_sitemap"]
@@ -794,6 +1003,12 @@ def _check_site(findings, base, site, ok):
                 "사이트맵과 실제 크롤 결과가 어긋난다 — 사이트맵에만 %d개, 크롤에만 %d개."
                 % (len(only_sm), len(only_cr)), (only_cr or only_sm),
                 {"only_in_sitemap": len(only_sm), "only_in_crawl": len(only_cr)})
+
+    coverage = site.get("_coverage")
+    if coverage and not coverage.get("complete"):
+        add(findings, "SEO", "critical", "CRAWL_INCOMPLETE",
+            "크롤 범위가 완전하지 않다 (%s). 결과를 전수 진단으로 사용하면 안 된다."
+            % ", ".join(coverage.get("reasons") or ["unknown"]), [], coverage)
 
     if site["llms"].get("llms.txt") != 200:
         add(findings, "GEO", "info", "LLMS_TXT_MISSING",
@@ -822,8 +1037,10 @@ def _check_site(findings, base, site, ok):
 
 def _check_crawler_policy(findings, site):
     policies = site["robots"]["policies"]
-    blocked = [ua for ua in AI_UAS if policies.get(ua, "none").endswith("block")]
-    partial = [ua for ua in AI_UAS if policies.get(ua, "none").endswith("partial")]
+    blocked = [ua for ua in SEARCH_UAS + USER_FETCH_UAS
+               if policies.get(ua, "none").endswith("block")]
+    partial = [ua for ua in SEARCH_UAS + USER_FETCH_UAS
+               if policies.get(ua, "none").endswith("partial")]
     if blocked:
         add(findings, "GEO", "critical", "AI_CRAWLER_BLOCKED",
             "AI 크롤러 %d종이 차단돼 있다 (%s) — 해당 엔진 인용을 포기한 상태다."
@@ -833,6 +1050,13 @@ def _check_crawler_policy(findings, site):
         add(findings, "GEO", "warn", "AI_CRAWLER_PARTIAL",
             "AI 크롤러 %d종에 부분 제한이 걸려 있다 (%s) — 규칙을 직접 읽어 확인하라."
             % (len(partial), ", ".join(partial)), [], {"partial": partial})
+
+    training_blocked = [ua for ua in TRAINING_UAS
+                        if policies.get(ua, "none").endswith("block")]
+    if training_blocked:
+        add(findings, "GEO", "info", "AI_TRAINING_BLOCKED",
+            "학습용 크롤러/토큰을 차단한 정책이 있다 (%s). 검색 접근 차단과는 구분한다."
+            % ", ".join(training_blocked), [], {"blocked": training_blocked})
 
     undeclared = [ua for ua in AI_UAS if policies.get(ua) == "none"]
     if undeclared:
@@ -880,15 +1104,17 @@ def print_summary(report: dict) -> None:
     stats = report["stats"]
     print("")
     print("════════════════════════════════════════════")
-    print(" Phase 0 전수 진단 — %s" % report["target"]["base"])
+    print(" Phase 0 범위 진단 — %s" % report["target"]["base"])
     print(" %s · %d페이지" % (report["generated_at"][:16].replace("T", " "),
                              stats["pages_crawled"]))
     print("════════════════════════════════════════════")
 
     print("")
     print("── 0. noindex 사고 점검 (최우선) ──")
-    if stats["pages_noindex"]:
-        print("🚨 noindex %d개 페이지 — 다른 모든 최적화가 무효다. 이것부터 고쳐라"
+    if not stats["pages_crawled"]:
+        print("⚠️  확인한 페이지가 없어 noindex 여부를 판정할 수 없다")
+    elif stats["pages_noindex"]:
+        print("🚨 noindex %d개 페이지 — 의도한 비색인 대상인지 확인하라"
               % stats["pages_noindex"])
     else:
         print("✅ noindex 없음")
@@ -899,6 +1125,11 @@ def print_summary(report: dict) -> None:
     print("   고유 title      : %d" % stats["unique_titles"])
     print("   고유 설명       : %d" % stats["unique_descriptions"])
     print("   JSON-LD 보유    : %d" % stats["pages_with_jsonld"])
+    coverage = report.get("coverage")
+    if coverage:
+        print("   크롤 범위       : %s%s" %
+              ("완료" if coverage.get("complete") else "불완전",
+               "" if coverage.get("complete") else " (" + ", ".join(coverage.get("reasons", [])) + ")"))
 
     print("")
     print("── 2. robots / sitemap ──")
@@ -918,7 +1149,7 @@ def print_summary(report: dict) -> None:
     print("")
     print("── 3. AI·국내 크롤러 정책 (robots.txt 실효 판정) ──")
     for ua in ALL_UAS:
-        print("   %-18s %s" % (ua, _policy_label(site["robots"]["policies"].get(ua, "none"))))
+        print("   %-18s %s" % (ua, _policy_label(site["robots"]["policies"].get(ua, "none"), ua)))
     print("   ※ Google-Extended는 UA가 아니라 robots 토큰이다 — 서버 로그에 안 잡힌다")
     print("   ※ Yeti는 네이버 검색 크롤러다 — 차단이면 NEO 레인 전체가 닫힌다")
 
@@ -958,7 +1189,11 @@ def print_summary(report: dict) -> None:
     print("════════════════════════════════════════════")
 
 
-def _policy_label(policy: str) -> str:
+def _policy_label(policy: str, ua=None) -> str:
+    if ua in TRAINING_UAS and policy == "explicit-block":
+        return "학습 사용 차단 (검색·사용자 요청 접근과 별도)"
+    if ua in TRAINING_UAS and policy == "explicit-partial":
+        return "학습 사용 일부 제한"
     return {
         "explicit-allow": "✅ 명시 허용",
         "explicit-block": "🚫 명시 차단 — 이 엔진 인용을 포기한 상태다",
@@ -971,7 +1206,7 @@ def _policy_label(policy: str) -> str:
 
 # ─────────────────────────────────────────────────────────── main
 
-def build_report(target: str, max_pages: int, delay: float) -> dict:
+def build_report(target: str, max_pages: int, delay: float, allow_noindex=None) -> dict:
     base = target if target.startswith(("http://", "https://")) else "https://%s" % target
     base = base.rstrip("/")
     host = host_of(base)
@@ -982,19 +1217,39 @@ def build_report(target: str, max_pages: int, delay: float) -> dict:
     if robots["status"] != 200 or raw.lstrip().startswith("<"):
         raw = ""
     rules = crawl_rules(raw, UA.split("/")[0])
+    declared = [m.strip() for m in re.findall(r"(?im)^\s*sitemap:\s*(\S+)", raw or "")]
+    sitemap_data = read_sitemaps(base, host, declared)
+    coverage = {}
 
     sys.stderr.write("크롤 시작: %s (최대 %d페이지, 간격 %.1fs)\n" % (base, max_pages, delay))
-    pages = crawl_site(base, max_pages, delay, rules)
+    pages = crawl_site(base, max_pages, delay, rules, seeds=sitemap_data[1], coverage=coverage)
+    allowed_paths = set(allow_noindex or [])
+    for page in pages:
+        if urllib.parse.urlsplit(page["url"]).path in allowed_paths:
+            page["intended_indexable"] = False
 
-    site = probe_site(base, raw, robots["status"], pages)
+    if robots["status"] != 200 or robots.get("error"):
+        coverage["complete"] = False
+        coverage["reasons"] = list(dict.fromkeys(coverage["reasons"] + ["robots_unavailable"]))
+    if any(s.get("status") == 200 and not s.get("parsed", True) for s in sitemap_data[0]):
+        coverage["complete"] = False
+        coverage["reasons"] = list(dict.fromkeys(coverage["reasons"] + ["sitemap_invalid"]))
+    if any(s.get("truncated") for s in sitemap_data[0]):
+        coverage["complete"] = False
+        coverage["reasons"] = list(dict.fromkeys(coverage["reasons"] + ["sitemap_truncated"]))
+
+    site = probe_site(base, raw, robots["status"], pages, sitemap_data=sitemap_data)
+    site["_coverage"] = coverage
     site["_all_pages_status"] = [(p["url"], p["status"]) for p in pages]
     findings, stats, board = analyze(base, site, pages)
     site.pop("_all_pages_status", None)
+    site.pop("_coverage", None)
 
     return {
         "schema": SCHEMA,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "target": {"input": target, "base": base, "host": host},
+        "coverage": coverage,
         "site": site,
         "pages": pages,
         "stats": stats,
@@ -1012,12 +1267,18 @@ def main(argv=None) -> int:
     ap.add_argument("target", help="도메인 또는 URL (예: example.com)")
     ap.add_argument("--max-pages", type=int, default=300)
     ap.add_argument("--delay", type=float, default=0.5)
+    ap.add_argument("--allow-noindex", action="append", default=[], metavar="PATH",
+                    help="의도한 비색인 경로(반복 가능, 예: /search)")
     ap.add_argument("--out", default="out")
     args = ap.parse_args(argv)
 
     report = None
     try:
-        report = build_report(args.target, args.max_pages, args.delay)
+        if args.max_pages < 1:
+            ap.error("--max-pages는 1 이상이어야 한다")
+        if args.delay < 0:
+            ap.error("--delay는 0 이상이어야 한다")
+        report = build_report(args.target, args.max_pages, args.delay, args.allow_noindex)
     except KeyboardInterrupt:
         sys.stderr.write("\n중단됨 — 여기까지의 결과를 저장한다.\n")
     except Exception as exc:  # 부분 결과라도 남긴다
@@ -1036,7 +1297,7 @@ def main(argv=None) -> int:
     print("")
     print("audit.json 저장: %s" % path)
     print("보고서 생성    : python tools/report.py %s" % path)
-    return 0
+    return 0 if report.get("coverage", {}).get("complete") is True else 2
 
 
 if __name__ == "__main__":

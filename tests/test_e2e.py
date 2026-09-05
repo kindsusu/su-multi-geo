@@ -256,7 +256,10 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(stats["pages_noindex"], 1)
         self.assertEqual(stats["pages_with_jsonld"], 0)
         self.assertEqual(self.audit_before["scorecard"]["SEO"]["status"], "bad")
-        self.assertEqual(self.audit_before["scorecard"]["AEO"]["status"], "bad")
+        # FAQ/JSON-LD 누락은 선택적 개선 기회이며 접근성 장애가 아니다.
+        self.assertEqual(self.audit_before["scorecard"]["AEO"]["status"], "ok")
+        self.assertTrue(all(f["severity"] == "info" for f in
+                            self.audit_before["findings"] if f["code"] == "FAQ_MISSING"))
 
     def test_crawl_skips_alt_host_probe_for_ip_targets(self):
         # www.127.0.0.1 조회는 의미도 없고 외부 DNS를 건드린다 — na로 남긴다
@@ -305,12 +308,56 @@ class TestEndToEnd(unittest.TestCase):
         self.assertGreaterEqual(self.verify["summary"]["pass"], 14)
 
     def test_verify_remaining_failures_are_the_expected_ones(self):
-        # 남긴 fail은 둘뿐이다: llms.txt의 <<TODO>>를 안 채웠고, meta 초안을 안 적용했다
+        # llms.txt TODO, meta 초안 불일치, 중복 title을 실제 배포 결함으로 잡는다.
         fails = {c["id"] for c in self.verify["checks"] if c["status"] == "fail"}
-        self.assertEqual(fails, {"llms.todo", "meta.duplicate"})
+        self.assertEqual(fails, {"llms.todo", "meta.applied", "meta.duplicate"})
         self.assertEqual(self.verify["exit_code"], 1)
         self.assertEqual(self.verify_proc.returncode, 1)
         self.assertTrue(os.path.exists(os.path.join(self.hostdir, "VERIFY.md")))
+
+    def test_reviewed_package_can_complete_live_verification(self):
+        """남은 초안을 실제 반영하면 CLI가 통과해야 한다. 관측값을 모킹하지 않는다."""
+        originals = {}
+
+        def replace(path, content):
+            if path not in originals:
+                with open(path, "rb") as stream:
+                    originals[path] = stream.read()
+            with open(path, "w", encoding="utf-8", newline="\n") as stream:
+                stream.write(content)
+
+        try:
+            # 이 사이트는 합성 테스트 픽스처다. TODO를 명시적 예시 설명으로 채운다.
+            llms = re.sub(r"<<TODO[^>]*>>", "테스트용 예시 서비스 안내",
+                          read_text(os.path.join(self.deploy_dir, "llms.txt")))
+            replace(os.path.join(self.deploy_dir, "llms.txt"), llms)
+            replace(os.path.join(self.docroot, "llms.txt"), llms)
+            from html import escape
+            for row in read_json(os.path.join(self.deploy_dir, "meta-draft.json")):
+                path = local_path(self.docroot, row["url"])
+                html = read_text(path)
+                title = row.get("draft_title", "")
+                if title and not title.startswith("<<TODO"):
+                    html = re.sub(r"<title>.*?</title>",
+                                  lambda _: "<title>%s</title>" % escape(title), html, flags=re.S)
+                description = row.get("draft_description", "")
+                if description and not description.startswith("<<TODO"):
+                    html = re.sub(r'<meta\s+name="description"[^>]*>', "", html, flags=re.I)
+                    html = html.replace("</head>", '<meta name="description" content="%s">\n</head>'
+                                        % escape(description, quote=True))
+                replace(path, html)
+            with tempfile.TemporaryDirectory() as results:
+                run_tool("verify.py", "deploy", self.audit_path, "--delay", "0",
+                         "--out", os.path.join(results, "verify.json"))
+                checked = read_json(os.path.join(results, "verify.json"))
+                self.assertEqual(checked["exit_code"], 0)
+                self.assertEqual(checked["summary"]["fail"], 0)
+                self.assertEqual(check_status(checked)["meta.applied"], "pass")
+                self.assertEqual(check_status(checked)["llms.todo"], "pass")
+        finally:
+            for path, content in originals.items():
+                with open(path, "wb") as stream:
+                    stream.write(content)
 
     # ─────────────────────────────────────────────── ⑦ 배포 후 재크롤
 
@@ -322,7 +369,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertNotIn(code, after)
         self.assertEqual(self.audit_after["stats"]["pages_with_jsonld"], 7)
         self.assertEqual(self.audit_after["stats"]["pages_noindex"], 1)
-        self.assertEqual(self.audit_after["scorecard"]["AEO"]["status"], "warn")
+        self.assertEqual(self.audit_after["scorecard"]["AEO"]["status"], "ok")
 
     # ─────────────────────────────────────────────── ④ measure
 
@@ -348,11 +395,13 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(self.history["baseline_date"], D1)
         self.assertEqual(len(self.history["snapshots"]), 4)
 
-    def test_compare_calls_it_an_improvement_and_schedules_the_next_run(self):
+    def test_compare_records_technical_improvements_and_only_proposes_next_run(self):
         self.assertEqual(self.drift["regressions"], [])
         improved = {i["code"] for i in self.drift["improvements"]}
-        for code in ("jsonld_pages", "sitemap_urls", "scorecard", "nonbrand_rate"):
+        for code in ("jsonld_pages", "sitemap_urls"):
             self.assertIn(code, improved)
+        self.assertNotIn("scorecard", improved)
+        self.assertNotIn("nonbrand_rate", improved)  # 회차별 비브랜드 표본 4개: 결론 보류
         self.assertEqual(self.drift["exit_code"], 0)
         self.assertEqual(self.compare_proc.returncode, 0)
         self.assertEqual(self.drift["next_due"],
@@ -363,9 +412,12 @@ class TestEndToEnd(unittest.TestCase):
         diff = self.drift["measure_diff"]
         self.assertIsNotNone(diff, self.drift["warnings"])
         self.assertEqual((diff["from"], diff["to"]), (D1, D2))
-        # report는 log.jsonl 전체를 누적 집계한다 — 기준선 0/4, 두 번째 스냅샷 2/8
-        self.assertEqual(diff["totals"]["before"]["nonbrand"], {"cited": 0, "runs": 4, "rate": 0.0})
-        self.assertEqual(diff["totals"]["after"]["nonbrand"], {"cited": 2, "runs": 8, "rate": 0.25})
+        # 최신 회차끼리 비교한다 — 기준선 0/4, 배포 후 2/4. 기준선이 분모에 재유입되지 않는다.
+        for when, cited, rate in (("before", 0, 0.0), ("after", 2, 0.5)):
+            slot = diff["totals"][when]["nonbrand"]
+            self.assertEqual((slot["cited"], slot["runs"], slot["rate"], slot["errors"]),
+                             (cited, 4, rate, 0))
+            self.assertEqual(len(slot["wilson95"]), 2)
         # 엔진별로도 같은 드리프트가 잡힌다
         chatgpt = [e for e in diff["engines"] if e["engine"] == "chatgpt"][0]
         self.assertEqual(chatgpt["nonbrand"]["before"]["rate"], 0.0)

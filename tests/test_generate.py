@@ -252,6 +252,9 @@ class TestLlms(Base):
 # ─────────────────────────────────────────────────────────── JSON-LD
 
 class TestJsonLd(Base):
+    def artifact(self, url, suffix):
+        return "jsonld/%s.%s" % (generate.slug_of(url), suffix)
+
     def test_organization_omits_empty_fields_and_never_invents_sameas(self):
         org = json.loads(self.read("jsonld/organization.json"))
         self.assertEqual(org["@id"], "https://example.com#organization")
@@ -273,7 +276,7 @@ class TestJsonLd(Base):
             shutil.rmtree(out, ignore_errors=True)
 
     def test_faq_only_for_crawled_pages_with_both_q_and_a(self):
-        faq = json.loads(self.read("jsonld/pricing.faq.json"))
+        faq = json.loads(self.read(self.artifact("https://example.com/pricing", "faq.json")))
         self.assertEqual(len(faq["mainEntity"]), 1)
         self.assertEqual(faq["mainEntity"][0]["name"], "요금은 언제 갱신되나요?")
         for rel in self.ctx.files:
@@ -284,20 +287,21 @@ class TestJsonLd(Base):
         self.assertIn("글자 그대로", self.read("DEPLOY.md"))
 
     def test_product_offer_needs_a_real_price(self):
-        product = json.loads(self.read("jsonld/pricing.product.json"))
+        product = json.loads(self.read(self.artifact("https://example.com/pricing", "product.json")))
         self.assertEqual(product["offers"]["price"], "30000")
         self.assertEqual(product["offers"]["priceCurrency"], "KRW")
-        other = json.loads(self.read("jsonld/branches-seoul.product.json"))
+        other = json.loads(self.read(self.artifact("https://example.com/branches/seoul", "product.json")))
         self.assertNotIn("offers", other)
 
     def test_breadcrumb_is_built_from_crawled_paths(self):
-        crumb = json.loads(self.read("jsonld/branches-seoul.breadcrumb.json"))
+        crumb = json.loads(self.read(self.artifact("https://example.com/branches/seoul", "breadcrumb.json")))
         names = [item["name"] for item in crumb["itemListElement"]]
         self.assertEqual(names[0], "예시 주식회사")
         self.assertEqual(names[-1], "서울 지점")
         self.assertEqual(crumb["itemListElement"][-1]["item"],
                          "https://example.com/branches/seoul")
-        self.assertFalse(os.path.exists(os.path.join(self.dir, "jsonld/home.breadcrumb.json")))
+        self.assertFalse(os.path.exists(os.path.join(
+            self.dir, self.artifact("https://example.com/", "breadcrumb.json"))))
 
     def test_website_has_name_and_url_only(self):
         website = json.loads(self.read("jsonld/website.json"))
@@ -309,13 +313,13 @@ class TestJsonLd(Base):
             if rel.endswith(".json"):
                 obj = json.loads(self.read(rel))
                 found += 1
-                if rel.startswith("jsonld/"):
+                if rel.startswith("jsonld/") and rel != generate.JSONLD_MANIFEST:
                     self.assertEqual((obj[0] if isinstance(obj, list) else obj)["@context"],
                                      "https://schema.org")
         self.assertGreater(found, 3)
 
     def test_snippets_are_script_tags(self):
-        snippet = self.read("jsonld/pricing.snippet.html")
+        snippet = self.read(self.artifact("https://example.com/pricing", "snippet.html"))
         self.assertIn('<script type="application/ld+json">', snippet)
         json.loads(snippet.split(">", 1)[1].split("</script>")[0])
 

@@ -521,8 +521,9 @@ class TestAuto(Fixture):
         send = Sender({"openai": {"_error": "http_429"}})
         rows = measure.run_auto(QUERIES[:1], ["chatgpt"], 1, HOST, {"chatgpt": SECRET},
                                 send=send, delay=0, date_str="2026-09-15")
-        self.assertIs(rows[0]["cited"], False)
-        self.assertIs(rows[0]["brand_mentioned"], False)
+        self.assertIsNone(rows[0]["cited"])
+        self.assertEqual(rows[0]["outcome"], "error")
+        self.assertEqual(rows[0]["error"], "http_429")
         self.assertIn("실패", rows[0]["note"])
         self.assertIn("http_429", rows[0]["note"])
 
