@@ -22,9 +22,9 @@ jobs:
 
     steps:
       # 의존성 설치 단계가 없다는 것이 이 CI의 주장이다 — 표준 라이브러리만 쓴다.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: ${{ matrix.python }}
 
