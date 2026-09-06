@@ -1,6 +1,7 @@
 # tools/ — 진단 도구
 
-전부 의존성 0이다. `audit.sh`는 bash + curl, 나머지는 파이썬 3.10+ 표준 라이브러리만 쓴다.
+추가 패키지 의존성은 없다. `audit.sh`는 bash·curl·Python 3.10+를 함께 쓰며(robots 정책은
+`crawl.py`와 같은 파서로 판정), 나머지는 Python 3.10+ 표준 라이브러리만 쓴다.
 
 ```
 crawl → report → generate → [사람이 배포] → verify → (14일) crawl·measure → drift → next_due
@@ -12,7 +13,7 @@ crawl → report → generate → [사람이 배포] → verify → (14일) craw
 |---|---|---|---|
 | `audit.json` | `su-multi-geo/audit/1` | `crawl.py` | `report` `generate` `verify` `measure` `drift` |
 | `verify.json` | `su-multi-geo/verify/1` | `verify.py` | `drift`(스냅샷) |
-| `measure/queries.json` | `su-multi-geo/queries/1` 또는 `/2` | 사람(`measure.py init`이 v1 초안) | `measure` |
+| `measure/queries.json` | `su-multi-geo/queries/1` (v2도 읽기 지원) | 사람(`measure.py init`이 현재 v1 템플릿을 복사) | `measure` |
 | `measure/log.jsonl` | `su-multi-geo/measure-row/2` (v1 읽기 지원) | `measure.py import`·`auto` | `measure report` |
 | `measure/summary.json` | `su-multi-geo/measure/2` (drift가 v1도 읽음) | `measure.py report` | `drift` |
 | `history/index.json` | `su-multi-geo/history/1` | `drift.py snapshot` | `drift` |
@@ -23,8 +24,8 @@ crawl → report → generate → [사람이 배포] → verify → (14일) craw
 
 | 도구 | 무엇 | 입력 | 출력 |
 |---|---|---|---|
-| `audit.sh` | 홈 1페이지 빠른 진단 | 도메인 | 콘솔 |
-| `crawl.py` | 사이트 전수 진단 | 도메인 | `out/<host>/audit.json` + 콘솔 |
+| `audit.sh` | 홈 1페이지 빠른 점검(레거시 보조 도구) | 도메인 | 콘솔 |
+| `crawl.py` | 범위가 기록되는 사이트 진단 | 도메인 | `out/<host>/audit.json` + 콘솔 |
 | `report.py` | 진단 결과 → 보고서 | `audit.json` | `report.html` |
 | `generate.py` | 진단 결과 → 배포 산출물 초안 | `audit.json` (+ `site.json`) | `out/<host>/deploy/` + `DEPLOY.md` |
 | `verify.py` | 배포가 실제로 서빙되는지 / 전후 비교 | `audit.json` (+ `deploy/`) | `verify.json` + `VERIFY.md` |
@@ -57,16 +58,17 @@ python tools/seo_geo.py generate all out/example.com/audit.json --site out/examp
 보존된다. `status`는 audit·deploy manifest·verify·measure·drift의 **로컬 기록 여부**만 읽는다.
 네트워크 검증이나 예약 작업 생성은 하지 않는다.
 
-## audit.sh — 빠른 1페이지 진단
+## audit.sh — 빠른 1페이지 점검
 
 ```bash
 bash tools/audit.sh example.com
 ```
 
-홈 하나만 훑는다. 30초 안에 noindex 사고·robots 정책·사이트맵 유무를 본다.
-"일단 상태부터 보자" 할 때 쓴다.
+홈 하나만 훑어 noindex 징후·robots 정책·사이트맵 유무를 표시한다. 요청 시간은 네트워크와
+응답에 따라 달라져 완료 시간을 보장하지 않는다. 이 스크립트는 레거시 빠른 점검용이며,
+배포 판단·범위 판정·증적은 `crawl.py`가 만든 `audit.json`을 기준으로 한다.
 
-## crawl.py — 전수 진단
+## crawl.py — 범위 제한 진단
 
 ```bash
 python tools/crawl.py example.com
@@ -79,7 +81,8 @@ python tools/crawl.py https://example.com --max-pages 500 --delay 1.0 --out repo
 | `--delay` | 0.5 | 요청 사이 대기(초). 남의 서버다, 줄이지 마라 |
 | `--out` | `out` | 출력 루트. 실제 경로는 `<out>/<host>/audit.json` |
 
-홈에서 시작해 같은 호스트의 내부 링크를 BFS로 따라간다. 쿼리스트링·프래그먼트는 떼고,
+홈과 같은 호스트의 sitemap 시드에서 시작해 내부 링크를 BFS로 따라간다. URL에서는
+프래그먼트만 제거하고 쿼리스트링은 보존하므로, 쿼리가 다른 URL은 별도 후보가 될 수 있다.
 이미지·CSS·JS 같은 자산은 건너뛴다. **robots.txt의 Disallow는 크롤할 때 존중한다.**
 User-Agent는 `su-multi-geo-audit/2.0`으로 밝히고 다닌다.
 
@@ -87,15 +90,21 @@ User-Agent는 `su-multi-geo-audit/2.0`으로 밝히고 다닌다.
 `X-Robots-Tag`·canonical·h1·JSON-LD 개수와 `@type`·본문 글자 수(바이트 아님)·
 OG 태그·네이버 소유확인·`lang`·응답 시간.
 
-사이트 수준으로 재는 것: robots.txt 원문과 UA 11종의 실효 정책, 사이트맵(선언·존재·URL 수·
+사이트 수준으로 재는 것: 유효한 `robots.txt` 응답의 **전체 원문**(`site.robots.raw`)과
+`crawl.py`의 `ALL_UAS` 목록에 있는 UA별 실효 정책, 사이트맵(선언·존재·URL 수·
 크롤 결과와의 차집합), `llms.txt`, 404 프로브, 리다이렉트 홉, www↔apex 변형 접속
 (대상이 IP·localhost면 변형이 없으므로 `na`로 남기고 조회하지 않는다).
 
-중간에 실패하거나 Ctrl+C로 끊어도 **거기까지의 결과를 저장한다.**
+`coverage`는 전수성의 증명이 아니라 이번 실행의 관측 범위다. 페이지 한도 도달, 탐색 큐 절단,
+시작 URL의 robots 차단, 네트워크/HTTP 오류, robots·sitemap 오류가 있으면
+`coverage.complete=false`가 된다. 이때 `crawl.py`는 결과를 쓴 뒤 exit 2를 반환한다.
+`crawl.py`를 Ctrl+C로 중단하면 현재 구현은 완료된 보고서를 만들거나 부분 결과를 저장하지 않고
+exit 1을 반환한다. `seo_geo.py audit`도 인터럽트 시 성공 관측을 저장하지 않고 exit 130을 반환한다.
 
 ### audit.json — 계약
 
-`report.py`와 이후 도구가 이 스키마를 쓴다. 필드를 바꾸면 버전(`schema`)을 올린다.
+`report.py`와 이후 도구가 이 스키마를 쓴다. 필드를 바꾸면 버전(`schema`)을 올린다. `robots.raw`는
+유효한 HTTP 200 robots 응답의 전체 본문이며, robots 응답이 없거나 HTML 오류 본문이면 빈 문자열이다.
 
 ```json
 {"schema":"su-multi-geo/audit/1","generated_at":"ISO8601",
@@ -217,8 +226,9 @@ python tools/verify.py diff out/example.com/audit.json out/after/example.com/aud
 ```
 
 **"고쳤다"를 증명하는 도구다.** 패키지에 파일이 있다는 것은 근거가 아니다 —
-라이브 사이트를 다시 받아 항목별로 ✅/❌를 낸다. `fail`이 하나라도 있으면 **exit code 1**
-(CI·스크립트 연계용).
+라이브 사이트를 다시 받아 항목별로 ✅/❌를 낸다. `fail`이 하나라도 있으면 **exit code 1**이다.
+실패는 없지만 sitemap 또는 URL의 미검사 범위가 남으면 `completion.complete=false`와 함께
+**exit code 2**다. 완전한 성공만 exit 0이다.
 
 ### `deploy` — 배포 패키지가 실제로 서빙되는가
 
@@ -227,17 +237,17 @@ python tools/verify.py diff out/example.com/audit.json out/after/example.com/aud
 | `noindex` | **최우선.** 배포로 noindex가 새로 생기지 않았는가 (meta + `X-Robots-Tag`) |
 | `robots.status` | robots.txt 200 응답 |
 | `robots.preserved` | 배포 전 원문 줄이 **한 줄도 빠짐없이** 남아 있는가 |
-| `robots.policy` | 추가한 UA 블록이 실제로 서빙되는가 (UA 11종 실효 정책 재판정) |
+| `robots.policy` | 추가한 UA 블록이 실제로 서빙되는가 (`crawl.py`의 `ALL_UAS` 전체 실효 정책 재판정) |
 | `robots.sitemap` | `Sitemap:` 선언 존재 |
 | `sitemap.reachable` | 선언된 사이트맵 200 · XML 파싱 (인덱스면 하위까지) |
-| `sitemap.locs` | `<loc>` **전수** 200 (동일 호스트만, `--max-urls` 상한) |
+| `sitemap.locs` | 동일 호스트 `<loc>`를 `--max-urls`까지 200 확인. 상한 또는 사이트맵 탐색 상한으로 남은 범위는 `warn`과 증적에 남는다 |
 | `sitemap.noindex` | noindex 페이지가 사이트맵에 실렸는가 |
 | `sitemap.canonical` | 사이트맵 URL과 canonical이 일치하는가 |
 | `llms.status` / `llms.todo` | llms.txt 200 / `<<TODO` 잔존 → ❌ "미완성 배포" |
-| `jsonld.present` / `jsonld.type` | 대상 페이지에 LD가 들어갔는가 · @type이 맞는가 |
+| `jsonld.present` / `jsonld.type` | 대상 페이지의 LD 존재·타입·핵심 객체 값이 패키지와 일치하는가 |
 | `jsonld.visible` | **LD 값이 가시 텍스트에 글자 그대로 있는가** — FAQ 문답, Organization name, Product name·가격. 없으면 ❌ "LD가 화면에 없는 말을 한다"(스팸 리스크) |
 | `jsonld.org_id` | Organization `@id`가 전 페이지에서 하나인가 |
-| `meta.applied` / `meta.duplicate` | meta 초안 반영 여부(바뀜/그대로) · 중복 title 잔존 |
+| `meta.applied` / `meta.duplicate` | `meta-draft.json`의 검토 가능한 title/description 값과 라이브 값을 공백 정규화 후 정확히 비교 · 중복 title 잔존 |
 
 가시 텍스트 비교는 태그를 걷어내고 **공백만 정규화**한 뒤 부분 문자열로 본다
 (가격은 `89000` ↔ `89,000` 표기를 같게 본다).
@@ -269,7 +279,8 @@ python tools/verify.py diff out/example.com/audit.json out/after/example.com/aud
 {"schema":"su-multi-geo/verify/1","mode":"deploy|diff","generated_at":"ISO8601",
  "target":{"base":"https://host","host":"host","deploy":"out/host/deploy"},
  "checks":[{"id":"sitemap.locs","status":"pass|fail|warn|skip","message":"...","evidence":{}}],
- "summary":{"pass":0,"fail":0,"warn":0,"skip":0},"exit_code":0}
+ "summary":{"pass":0,"fail":0,"warn":0,"skip":0},
+ "completion":{"complete":true,"reasons":[]},"exit_code":0}
 ```
 
 `VERIFY.md`는 같은 내용의 사람용 요약이다 — ❌를 먼저 싣고 항목마다 다음 조치를 한 줄 붙인다.
@@ -279,7 +290,7 @@ python tools/verify.py diff out/example.com/audit.json out/after/example.com/aud
 ```bash
 python tools/measure.py init   out/example.com/audit.json
 python tools/measure.py form   out/example.com/audit.json --engines chatgpt,google_aio --runs 5
-python tools/measure.py import out/example.com/audit.json out/example.com/measure/form-2026-09-15-filled.csv
+python tools/measure.py import out/example.com/audit.json out/example.com/measure/form-2026-09-15.csv
 python tools/measure.py report out/example.com/audit.json
 python tools/measure.py report out/example.com/audit.json --since 2026-09-01 --until 2026-09-30 --cumulative
 python tools/measure.py auto   out/example.com/audit.json --engines chatgpt,claude --runs 5
@@ -317,7 +328,7 @@ API 키가 하나도 없어도 측정 루프는 완전히 돈다. 자동화는 �
 ### 계약
 
 ```
-out/<host>/measure/queries.json   su-multi-geo/queries/1 또는 /2
+out/<host>/measure/queries.json   `init`은 현재 su-multi-geo/queries/1 템플릿을 복사하며, /2도 읽는다
   {"queries":[{"id":"Q01","text":"...","type":"brand|nonbrand","note":""}]}
 
 out/<host>/measure/log.jsonl      su-multi-geo/measure-row/2  · append-only · 한 줄 = 질의 1회
@@ -372,6 +383,9 @@ Gemini·Perplexity·Google AI Overviews·네이버·다음·Copilot은 자동화
 - OpenAI Responses API(`/v1/responses` + `tools:[{"type":"web_search"}]`)의 `url_citation`
   주석에서, Anthropic Messages API(`/v1/messages` + 서버 도구 `web_search_20250305`)의
   text 블록 `citations`에서 URL을 뽑는다. **검색 결과 전체가 아니라 실제 인용만 센다**
+- 자동화가 지원하는 것은 OpenAI·Anthropic **API 응답의 인용 관측**뿐이다. 웹 UI 결과, 로그인
+  상태별 결과, 색인 여부, 노출 순위·회수·원인은 측정하거나 보장하지 않는다. 웹 검색 도구 사용 가능
+  여부와 모델·요금·응답 형식은 계정과 각 API의 현재 정책에 좌우되며, API 오류는 실패 행으로 남긴다
 - `urllib`만 쓴다 (SDK 의존 없음). HTTP 전송 함수는 주입 가능하다 — 테스트는 가짜 응답으로 돈다
 - ⚠️ **모델명은 각사 문서에서 현재 값을 확인하라.** 코드 상수는 출발점일 뿐이고,
   `OPENAI_MODEL` / `ANTHROPIC_MODEL` 환경변수로 덮어쓴다
@@ -483,7 +497,7 @@ python tools/drift.py timeline out/example.com/audit.json
 ## 테스트
 
 ```bash
-bash tools/test_audit.sh           # audit.sh
+bash tools/test_audit.sh           # audit.sh (bash·curl·Python 필요)
 python -m unittest discover tests  # 단위 + E2E (외부 네트워크 없음)
 python -m unittest tests.test_e2e  # E2E만
 ```

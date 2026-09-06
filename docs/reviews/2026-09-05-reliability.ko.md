@@ -1,7 +1,8 @@
 # SEO/GEO 신뢰성 개선 결과
 
 작업일: 2026-09-05. 기준 커밋: `f7f97af1e98fa7abe7a53112e0c31999ddfd37ff`.
-작업 브랜치: `codex/seo-geo-reliability`. 로컬 구현이며 원격 게시·운영 배포는 수행하지 않았다.
+구현 커밋: [`009122d`](https://github.com/kindsusu/su-multi-geo/commit/009122d5f4bc3362f22a33249a1d8d90d871c69c).
+2026-09-06 (한국 시간) `main` 반영 완료. 운영 사이트 배포는 수행하지 않았다.
 
 기존 진단·초안 생성·배포 검증·측정 도구의 연결을 유지하면서, 누락이나 관측 실패를 성공으로
 판정할 수 있던 경로를 수정했다. 프로그램 동작과 검색 성과는 별개로 검증한다.
@@ -34,8 +35,9 @@
 - Python 문법 검사, CLI doctor, 스킬 형식 검사, git diff 검사 통과.
 - HTML 보고서를 브라우저에서 열어 내용과 화면을 확인했다. 외부 글꼴 없이 렌더링된다.
 
-실행 환경은 Windows / Python 3.12.3이다. CI에 3개 OS × 3개 Python 버전 검사가 구성되어
-있지만, 이번 로컬 변경을 원격 CI에서 실행한 것은 아니다.
+로컬 실행 환경은 Windows / Python 3.12.3이다. 반영 후 원격 CI에서도 Windows·macOS·Linux ×
+Python 3.10·3.12·3.13의 9개 작업이 모두 통과했다.
+[main CI 실행 기록](https://github.com/kindsusu/su-multi-geo/actions/runs/33977798978).
 
 ## 실행
 
@@ -58,8 +60,8 @@ python tools/seo_geo.py measure form out/YOUR-DOMAIN/audit.json --engines chatgp
 ```
 
 사이트 변경 적용 후 verify를 실행한다. 생성 패키지는 검토할 초안이다.
-측정 폼에는 직접 관측한 값만 넣는다. 상세 절차는 [도구 사용법](tools/README.md),
-[측정 운영](ops/measure.md), [판단 근거](ops/evidence.md)를 따른다.
+측정 폼에는 직접 관측한 값만 넣는다. 상세 절차는 [도구 사용법](../../tools/README.md),
+[측정 운영](../../ops/measure.md), [판단 근거](../../ops/evidence.md)를 따른다.
 
 ## 아직 외부에서 검증해야 하는 것
 

@@ -18,319 +18,131 @@
   <img alt="Korean-first" src="https://img.shields.io/badge/Korean-first-B3372B">
 </p>
 
-**AI 검색 노출을 진단·구현·측정하는 Claude Code 스킬 — 엔진마다 레인을 따로 둔다.**
-
-대부분의 GEO 가이드는 "AI 크롤러"를 한 덩어리로 다룬다. 실제로는 학습 크롤러, 검색 크롤러,
-사용자 요청 가져오기, 일반 검색 색인이 서로 다른 역할과 제어점을 가진다. 이 스킬은 각 표면을
-분리해 기록하고, **네이버와 다음/카카오를 각주가 아니라 정식 레인**으로 두며, 기술 준비 상태와
-실제 인용·유입·전환 결과를 구분한다.
-
-## 목차
-
-- [세 층으로 쌓는다](#세-층으로-쌓는다--도달--인용--각인)
-- [도구 파이프라인](#도구-파이프라인)
-- [빠른 시작](#빠른-시작)
-- [샘플 출력](#샘플-출력)
-- [누구를 위한 것인가](#누구를-위한-것인가)
-- [방법론](#방법론)
-- [무엇이 들어 있나](#무엇이-들어-있나)
-- [수작업·에이전시와의 비교](#수작업에이전시와의-비교)
-- [한계](#한계)
-- [요구사항](#요구사항)
-- [기여자](#기여자) · [라이선스](#라이선스)
-
----
-
-## 세 층으로 쌓는다 — 도달 → 인용 → 각인
-
-이 스킬은 최적화를 "레인 목록"이 아니라 **아래에서 위로 쌓이는 세 층**으로 다룬다.
-층마다 상대하는 엔진, 손대는 지점, 측정 주기가 다르다 — 그래서 파일도 층 단위(`lanes/`)와
-층을 가로지르는 절차(`ops/`)로 나뉜다.
-
-![세 층 — 도달, 인용, 각인](assets/three-layers.ko.svg)
-
-**naver 레인이 이 저장소를 영문으로도 내는 이유다.** 글로벌 가이드는 네이버를 다루지 않지만,
-네이버 AI 브리핑은 문단 단위 출처 칩이라는 구조적으로 다른 표적이다.
-
----
-
-## 도구 파이프라인
-
-도구들은 하나의 산출물 사슬로 이어진다. 읽기 진단과 로컬 초안은 요청 범위 안에서 진행한다.
-모든 생성물은 검토용 초안이며, 운영 배포 후에는 서버가 실제로 반환하는 값을 다시 확인한다.
-
-![파이프라인 — 진단, 승인 게이트, 생성, 배포 게이트, 증명, 재측정, 루프](assets/pipeline.ko.svg)
-
----
+**기술 검색 접근성을 진단하고, 사이트 변경 초안을 만들고, 라이브 배포를 검증하고, AI 검색 인용을 측정하는 한국어 우선 스킬입니다.** SEO·AEO·GEO·LLMO·네이버·평판을 별도 레인으로 다루며, 크롤러 접근·색인 상태·인용·사업 성과를 같은 결과로 섞지 않습니다.
 
 ## 빠른 시작
 
-플러그인으로 (권장):
+설치 경로 하나를 고릅니다. 플러그인은 Claude Code에서 편하고, 클론은 독립 실행과 개발에 적합합니다.
 
-```
+### 플러그인 설치
+
+```text
 /plugin marketplace add kindsusu/su-multi-geo
 /plugin install su-multi-geo@su-multi-geo
 ```
 
-또는 스킬로 클론:
+설치한 스킬의 디렉터리에서 도구를 실행합니다. 진단 대상 프로젝트에 `tools/`가 있다고 가정하지 않습니다.
 
 ```bash
-git clone https://github.com/kindsusu/su-multi-geo.git ~/.claude/skills/su-multi-geo
+python <skill-root>/tools/seo_geo.py doctor
+python <skill-root>/tools/seo_geo.py audit https://example.com --out <project>/out
 ```
 
-설치 후엔 그냥 말하면 된다: *"우리 사이트 SEO 진단해줘"*, *"제미나이가 인용하게 해줘"*, *"llms.txt 만들어줘"*.
-
-### 3분 진단
+### 클론 후 로컬 실행
 
 ```bash
+git clone https://github.com/kindsusu/su-multi-geo.git
+cd su-multi-geo
 python tools/seo_geo.py doctor
 python tools/seo_geo.py audit https://example.com --out out
-# → out/example.com/audit.json + report.html
 ```
 
-### 그다음
+`audit`는 `out/<host>/audit.json`과 `report.html`을 만듭니다. 적용되는 `robots.txt`를 지키고 수집 범위를 기록하며, 수집이 끝나지 않으면 종료 코드 `2`를 냅니다. 불완전한 진단은 사이트 전체 목록이 아니라 일부 관측입니다.
+
+## 실제 작업 순서
+
+![파이프라인 — 진단, 기준선, 생성, 배포, 검증, 재측정, 비교](assets/pipeline.ko.svg)
+
+### 사이트 변경 전: 기준선을 남긴다
+
+`compare`에는 날짜가 다른 스냅샷이 최소 두 개 필요합니다. 초안을 만들거나 배포하기 **전** 첫 진단과 인용 cohort를 남깁니다. 질의 세트는 폼보다 먼저 초기화하고, 채운 폼은 import와 report까지 끝낸 뒤 스냅샷으로 보관합니다.
 
 ```bash
-cp templates/site.example.json out/example.com/site.json      # 회사 사실 — 사람이 채운다
-python tools/seo_geo.py generate all out/example.com/audit.json \
-       --site out/example.com/site.json                       # → deploy/ + DEPLOY.md (초안, 배포는 사람이)
-
-python tools/seo_geo.py verify deploy out/example.com/audit.json
+# 1. 진단하고 변경 전 인용 cohort를 기록한다
+python tools/seo_geo.py audit https://example.com --out out
+python tools/seo_geo.py measure init out/example.com/audit.json
 python tools/seo_geo.py measure form out/example.com/audit.json \
-       --engines chatgpt,google_aio --runs 5                  # → CSV + 오프라인 HTML 입력 폼 (사람이 측정)
-python tools/seo_geo.py drift compare out/example.com/audit.json
-python tools/seo_geo.py status out/example.com/audit.json
+  --engines chatgpt,google_aio --runs 5
+python tools/seo_geo.py measure import out/example.com/audit.json \
+  out/example.com/measure/form-YYYY-MM-DD-filled.csv
+python tools/seo_geo.py measure report out/example.com/audit.json
+python tools/seo_geo.py drift snapshot out/example.com/audit.json \
+  --measure out/example.com/measure/summary.json --baseline
 ```
 
-배포 검증은 필수 범위를 모두 확인하고 실패가 없을 때만 `0`, 확인된 실패는 `1`, 필수 검사
-범위가 남으면 `2`로 종료한다. 일반적인 참고 경고만으로는 종료코드를 바꾸지 않는다.
+`YYYY-MM-DD`는 폼에 사용한 실제 날짜로 바꿉니다. 생성된 CSV를 직접 관측한 결과로 채우고
+`-filled.csv` 이름으로 저장하거나, import에 실제 저장 경로를 전달하세요.
 
-`audit`는 적용되는 `robots.txt` 규칙을 지키고 범위 제한 크롤의 coverage를 기록한다. 크롤이
-불완전하면 교체용 사이트맵을 생성하지 않는다. 전체 옵션과 JSON 스키마는 [`tools/README.md`](tools/README.md).
+### 초안 생성, 배포, 라이브 검증
 
----
-
-## 샘플 출력
-
-`example.com` 가상 값이다.
-
-```console
-$ python tools/crawl.py example.com
-
-════════════════════════════════════════════
- Phase 0 범위 제한 진단 — https://example.com
- 2026-09-03 10:24 · 42페이지
-════════════════════════════════════════════
-
-── 0. noindex 사고 점검 (최우선) ──
-🚨 noindex 3개 페이지 — 다른 모든 최적화가 무효다. 이것부터 고쳐라
-
-── 1. 크롤 통계 ──
-   크롤 페이지     : 42
-   고유 title      : 37
-   고유 설명       : 21
-   JSON-LD 보유    : 16
-
-── 2. robots / sitemap ──
-   robots.txt      : 있음 (HTTP 200)
-   Sitemap 선언    : ❌ robots.txt에 없음
-   https://example.com/sitemap.xml            HTTP 200  (URL 28개)
-   사이트맵 vs 크롤: 사이트맵에만 3 · 크롤에만 17
-
-── 3. AI·국내 크롤러 정책 (robots.txt 실효 판정) ──
-   GPTBot             미설정 → 기본 허용 (명시 권장)
-   OAI-SearchBot      미설정 → 기본 허용 (명시 권장)
-   ChatGPT-User       미설정 → 기본 허용 (명시 권장)
-   ClaudeBot          미설정 → 기본 허용 (명시 권장)
-   Claude-SearchBot   미설정 → 기본 허용 (명시 권장)
-   Claude-User        미설정 → 기본 허용 (명시 권장)
-   PerplexityBot      🚫 명시 차단 — 학습/수집 표면 제한
-   Perplexity-User    🚫 명시 차단 — 사용자 요청 가져오기 표면 제한
-   Google-Extended    미설정 → 기본 허용 (명시 권장)
-   Yeti               미설정 → 기본 허용 (명시 권장)
-   Daumoa             미설정 → 기본 허용 (명시 권장)
-   ※ Google-Extended는 UA가 아니라 robots 토큰이다 — 서버 로그에 안 잡힌다
-   ※ Yeti는 네이버 검색 크롤러다 — 차단이면 NEO 레인 전체가 닫힌다
-
-── 4. llms.txt / 응답 위생 ──
-   /llms.txt        HTTP 404
-   /llms-full.txt   HTTP 404
-   404 동작        : HTTP 200  (404여야 정상)
-   리다이렉트 홉   : 1
-   홈 응답 시간    : 412ms
-   도메인 변형     : https://www.example.com → ok
-
-── 5. 레인 점수표 ──
-   SEO         ❌  NOINDEX, TITLE_DUPLICATE, SITEMAP_CRAWL_MISMATCH, SOFT_404
-   AEO         ⚠️  SNIPPET_RESTRICTED
-   GEO         ⚠️  일부 검색·사용자 가져오기 표면 제한
-   LLMO        ⚠️  ORG_JSONLD_MISSING
-   NEO         ⚠️  NAVER_VERIFY_MISSING
-   reputation  —  사이트 밖 표면 — 점검 대상 (lanes/reputation.md)
-
-── 6. findings ──
-   🚨[SEO] noindex가 3개 페이지에 걸려 있다 — 다른 모든 최적화가 무효다.
-   ⚠️ [GEO] 검색·사용자 가져오기 역할의 크롤러 접근이 제한돼 있다 — 해당 표면의 영향은 별도 확인한다.
-   ⚠️ [SEO] 같은 title을 쓰는 페이지가 6개다 (14%) — 제목 중복이며 본문 중복 여부는 별도 확인한다.
-   ⚠️ [SEO] 사이트맵과 실제 크롤 결과가 어긋난다 — 사이트맵에만 3개, 크롤에만 17개.
-   ⚠️ [SEO] 없는 주소가 404가 아니라 HTTP 200를 낸다 — soft 404는 색인 예산을 태운다.
-   · [AEO] 적합한 페이지에는 구조화 데이터를 추가할 수 있다 — FAQ/JSON-LD는 필수 조건이 아니다.
-   ⚠️ [LLMO] Organization/LocalBusiness JSON-LD가 없다 — 엔티티를 붙잡을 앵커가 없다.
-   ⚠️ [NEO] naver-site-verification 메타가 없다 — 서치어드바이저 미연결 가능성.
-   · [GEO] AI 크롤러 7종이 robots.txt에 명시돼 있지 않다 — 기본 허용이지만 우연에 맡긴 상태다.
-   · [GEO] /llms.txt가 없다 (HTTP 404) — 선택 기능이며 검색·인용의 필수 조건은 아니다.
-
-════════════════════════════════════════════
- 스크립트로 안 되는 것 (사람이 확인):
-  · GSC / Bing WMT / 네이버 서치어드바이저 색인 수
-  · 각 엔진에 직접 질의한 AI 인용 O/X (특히 Gemini)
-  · 제3자 평판 표면 (lanes/reputation.md)
-════════════════════════════════════════════
-
-audit.json 저장: out/example.com/audit.json
-보고서 생성    : python tools/report.py out/example.com/audit.json
-```
-
-사람이 배포한 뒤에는 **라이브 사이트를 다시 받아** 항목별로 판정한다 — 패키지에 파일이
-있다는 것은 근거가 아니다:
-
-```console
-$ python tools/verify.py deploy out/example.com/audit.json
-
-════════════════════════════════════════════
- 배포 검증 — example.com
-════════════════════════════════════════════
- ❌ llms.todo             llms.txt에 <<TODO 표식이 3곳 남아 있다
- ⚠️ meta.applied          meta 초안 12건 중 7건이 아직 반영되지 않았다
- ✅ noindex               새로 생긴 noindex 없음 (28페이지 확인)
- ✅ robots.status         robots.txt HTTP 200
- ✅ robots.preserved      기존 robots.txt 24줄이 그대로 서빙된다
- ✅ robots.policy         추가한 UA 블록이 실효 정책으로 확인된다
- ✅ robots.sitemap        robots.txt에 `Sitemap:` 줄이 있다
- ✅ sitemap.reachable     https://example.com/sitemap.xml HTTP 200
- ✅ sitemap.locs          <loc> 28건 전수 HTTP 200
- ✅ sitemap.noindex       사이트맵에 noindex 페이지가 없다
- ✅ sitemap.canonical     사이트맵 URL과 canonical이 일치한다
- ✅ llms.status           llms.txt HTTP 200
- ✅ jsonld.type           패키지와 라이브 페이지의 @type이 일치한다
- ✅ jsonld.visible        LD의 문구가 가시 텍스트에 그대로 있다
- — jsonld.org_id         확인할 Organization LD가 없다
-
- 결과: ❌ 1 · ⚠️ 1 · ✅ 12 · — 1
- 실패가 있다 — 배포는 아직 끝나지 않았다.
-
-verify.json: out/example.com/verify.json
-VERIFY.md  : out/example.com/VERIFY.md
-
-$ echo $?
-1
-```
-
----
-
-## 누구를 위한 것인가
-
-- **한국 시장을 상대하는 사업자** — 네이버·다음/카카오가 부록이 아니라 레인이다
-- **인하우스 마케팅·PR·인사** — 각인 층이 제3자 평판 표면(채용 사이트 회사 정보 포함)까지 다룬다
-- **에이전시·프리랜서** — 고객사나 외주 개발사에 그대로 넘길 수 있는 고정 스키마 진단 산출물과 배포 지시서
-- **Claude Code 사용자** — 설치하고 말로 시키면 된다. API 키도, `pip install`도 필요 없다
-
----
-
-## 방법론
-
-1. **증거 표면을 밝힌다.** 진단은 원시 HTTP 응답을 검사한다. 검색엔진의 렌더링 DOM·색인·순위·인용을 증명하지 않는다. 배포 후에는 라이브 응답을 다시 확인한다.
-2. **지어내지 않는다.** 값은 실측(`audit.json`)과 사람이 적은 사실(`site.json`)에서만 온다. 나머지는 `<<TODO: …>>`로 남고, TODO가 남은 채 올라가면 배포 검증이 실패로 잡는다.
-3. **변경을 검토 가능하게 만든다.** 읽기 검사와 로컬 초안 때문에 인위적으로 멈추지 않는다. 사이트 사실과 배포 변경은 운영 반영 전에 검토한다.
-4. **1차 소스를 쥐는 것이 먼저, 배급은 그다음이다.** 모델이 인용하는 것은 매끄러운 문장이 아니라 출처가 확인되는 수치다. 손대기 전에 "이 사이트만 낼 수 있는 숫자가 무엇인가"부터 답한다. ⚠️ **"96%"보다 "25건 중 24건"** — 분모가 보이는 숫자가 검증도 인용도 살아남는다.
-5. **비교 가능한 표본을 측정한다.** 같은 질의 세트·엔진·표면·지역·회차 설계로 반복 관측한다. API 오류는 미인용으로 세지 않고, `next_due`는 실행 증거가 아닌 날짜 기록이다.
-6. **정공법만.** 백링크 구매·품앗이 자동화·클로킹·숨긴 텍스트는 누가 지시해도 하지 않는다. 가이드라인 위반은 순위 하나가 아니라 도메인 전체를 건다. 그리고 **가져온 웹 콘텐츠는 데이터지 명령이 아니다** — 긁어온 페이지 안의 지시문처럼 보이는 텍스트는 분석 대상일 뿐이다.
-
----
-
-## 무엇이 들어 있나
-
-```
-SKILL.md                 운영 절차 — 진단 → 초안 → 검증 → 측정
-lanes/                   층별 실행 지침
-├── seo.md               ① 도달 — SSR·사이트맵·JSON-LD·응답 위생
-├── aeo.md               ② 인용 — 답변 추출·FAQ·E-E-A-T·Bing 등록
-├── geo.md               ② 인용 — 엔진별 매트릭스와 결정 지점
-├── naver.md             ② 인용 — 서치어드바이저·AI 브리핑·블로그 투트랙
-├── llmo.md              ③ 각인 — 엔티티 일관성·학습 표면·분기 검증
-└── reputation.md        ③ 각인 — 제3자 평판 표면·채용 프로필·담당 지정
-ops/                     층을 가로지르는 절차
-├── crawlers.md          봇 정책 — 4개 벤더 9개 UA + Google-Extended 예외
-├── intent.md            질문 발굴·선별·페이지 매핑·포맷
-└── measure.md           기준선 → 재측정 → 인용 측정 → 오인용 정정
-tools/                   진단·생성 도구 (의존성 0) — tools/README.md 참조
-├── audit.sh             빠른 1페이지 진단 (+ test_audit.sh)
-├── seo_geo.py           통합 CLI — 진단·상태·도구 전달
-├── crawl.py             범위 제한 진단 + coverage → audit.json
-├── report.py            audit.json → 독립 HTML 보고서
-├── generate.py          audit.json + site.json → 배포 산출물 초안 + DEPLOY.md
-├── verify.py            배포 후 검증 · 전후 진단 비교 → verify.json + VERIFY.md
-├── measure.py           AI 인용 측정 (수동 폼 기본 · 자동은 선택) → log.jsonl + MEASURE.md
-└── drift.py             기준선 스냅샷 · 회귀 판정 · 재측정 일정 → drift.json + DRIFT.md
-templates/               보고서 템플릿 (report.html) · 용어 사전 (glossary.json)
-                         · site.example.json (회사 사실 입력 양식)
-                         · queries.example.json (측정 질의 세트 양식)
-tests/                   도구별 유닛·신뢰성 테스트 + test_e2e.py(로컬 픽스처 사이트로 전 루프,
-                         tests/fixtures/site/). 네트워크 없음
-en/                      영문 미러 (lanes/·ops/ 동일 구조)
-```
-
-`lanes/`·`ops/`가 국문 정본이고 `en/`은 사람 독자용 영문 미러다. 에이전트는 국문판을 읽는다.
-
----
-
-## 수작업·에이전시와의 비교
-
-|  | 직접 수작업 | 에이전시 위탁 | 이 스킬 |
-|---|---|---|---|
-| **비용** | 내 시간 | 월 고정비 | 비영리 사용은 무료 — 드는 것은 내 시간 |
-| **주기** | 생각날 때 | 계약서에 적힌 대로 | `next_due` 날짜가 계산되고, 남은 일수를 세어 주는 명령이 있다 |
-| **재현성** | 조용히 어긋나는 스프레드시트 | 그쪽 템플릿·그쪽 포맷 | 버전이 박힌 JSON 스키마. 스냅샷은 불변이고 조용한 덮어쓰기를 거부한다 |
-| **측정** | "한 번 떴다" | 순위 추적 | 실패와 관측 표면을 분리한 비교 가능한 인용 표본 |
-| **한국 시장** | 네이버는 혼자 조사 | 업체에 따라 다름 | 정식 레인 — 서치어드바이저·AI 브리핑·다음/카카오 |
-| **결정 주체** | 나 | 그쪽 | 나 — 생성물은 전부 초안이고 배포는 사람이 한다 |
-
----
-
-## 한계
-
-숨기는 도구가 못 하는 도구보다 나쁘다. 그대로 적는다.
-
-- **자동 측정은 다른 표면이다.** `measure.py auto`는 ChatGPT·Claude **API**를 부른다 — 사람들이 실제로 쓰는 비로그인 웹 UI가 아니다. 자동은 수동을 대체하지 않고, Gemini·Perplexity·Google AI Overviews·Copilot·네이버·다음은 **수동으로만** 잰다.
-- **자바스크립트를 렌더하지 않는다.** 원시 HTTP HTML이 얇다는 결과는 렌더링과 크롤러 전달을 추가 확인할 근거이며, 검색엔진이 색인하지 못한다는 증거는 아니다.
-- **벤더 수치는 없다.** 서치콘솔·Bing WMT·네이버 서치어드바이저의 색인 수, 제3자 평판 표면은 가져오지 않는다. 추정으로 채우지 않고 "미확인"으로 남긴다.
-- **인용을 보장하지 않는다.** 이 도구가 엔진에게 인용을 시키지는 못한다. 인용하지 *못할* 이유를 걷어내고, 인용이 시작됐는지 잴 방법을 줄 뿐이다.
-- **크롤은 유한하다.** 기본 300페이지, 대상 호스트 한 곳이다. coverage에 상한·차단·잔여 작업을 기록하고, 불완전하면 교체용 사이트맵 생성을 막는다.
-- **도구가 없는 Phase가 넷이다.** 메시지·의도 랜딩·평판·네이버 등록은 사람이 결정할 것들이다. 도구는 그 결정을 잰 값으로 뒷받침할 뿐 대신 내리지 않는다.
-
----
-
-## 요구사항
-
-- **파이썬 3.10+** — 표준 라이브러리만, `pip install` 없음
-- **bash + curl** — `tools/audit.sh` 전용
-- CI는 ubuntu·windows·macos × 파이썬 3.10·3.12·3.13에서 돈다. 워크플로에 **의존성 설치 단계가 없다는 것 자체가** "표준 라이브러리만"의 증명이다.
+초안을 만들기 전에 [`templates/site.example.json`](templates/site.example.json)을 `out/<host>/site.json`으로 복사해 확인한 회사 사실만 입력합니다. 생성물은 배포 초안이며, 사람은 이를 검토한 뒤 승인된 운영 환경에만 적용합니다.
 
 ```bash
-python -m unittest discover tests     # 네트워크 없음
+python tools/seo_geo.py generate all out/example.com/audit.json \
+  --site out/example.com/site.json
+
+# 배포한 뒤 실제 서버가 반환하는 값을 확인한다.
+python tools/seo_geo.py verify deploy out/example.com/audit.json
 ```
 
----
+`verify deploy`는 실제 서버 응답을 확인합니다. JSON-LD의 `@type`만 맞는다고 검증이 끝나는 것은 아니며, 해당하는 값은 가시 본문과도 대조합니다.
 
-## 기여자
+### 변경 후: 재측정, 두 번째 스냅샷, 비교
 
-- **[kindsusu](https://github.com/kindsusu)** — 설계·저술·운영
-- **Claude** (Anthropic) — 초안·개정·진단 스크립트 페어 작업
-- **Codex** (OpenAI) — 적대적 코드 리뷰 (보안·오진 결함 3건 발견)
+다른 날짜에 같은 질의 cohort와 조건으로 측정합니다. 재진단하고, 두 번째 폼을 채워 import와 report를 끝낸 뒤 두 번째 스냅샷을 남깁니다. 이때부터 `compare`가 전후 근거를 비교할 수 있습니다.
+
+```bash
+python tools/seo_geo.py audit https://example.com --out out
+python tools/seo_geo.py measure form out/example.com/audit.json \
+  --engines chatgpt,google_aio --runs 5
+python tools/seo_geo.py measure import out/example.com/audit.json \
+  out/example.com/measure/form-YYYY-MM-DD-filled.csv
+python tools/seo_geo.py measure report out/example.com/audit.json
+python tools/seo_geo.py drift snapshot out/example.com/audit.json \
+  --measure out/example.com/measure/summary.json
+python tools/seo_geo.py drift compare out/example.com/audit.json
+```
+
+`noindex`는 확인할 finding이지 모든 페이지나 결과가 무효라는 뜻이 아닙니다. 의도한 비색인 경로는 `--allow-noindex`로 밝힐 수 있고, 진단은 관측한 사실을 남깁니다. `status`는 로컬 산출물 기록만 보여 주며 현재 배포·색인·인용·예약 실행을 증명하지 않습니다.
+
+## 산출물이 뜻하는 것
+
+| 단계 | 주요 산출물 | 확인하는 범위 |
+|---|---|---|
+| `audit` | `audit.json`, `report.html` | 원시 HTTP 관측과 실제 수집 범위 |
+| `generate` | `deploy/`, `DEPLOY.md` | 검토 가능한 배포 초안. 배포 완료 증거는 아님 |
+| `verify deploy` | `verify.json`, `VERIFY.md` | 배포 뒤 라이브 응답 검사. `1`은 검증된 실패, `2`는 불완전 또는 잘못된 범위 |
+| `measure` | 수동 폼, `log.jsonl`, `summary.json`, `MEASURE.md` | 고정 cohort의 반복 인용 관측. API와 웹 UI는 별도 표면 |
+| `drift` | 불변 `history/`, `drift.json`, `DRIFT.md` | 스냅샷 비교와 다음 점검일. `next_due`는 예약을 만들지 않음 |
+
+플러그인 메타데이터 버전은 **2.0.0**입니다. `main`의 신뢰성·실행 흐름 변경은 [CHANGELOG의 Unreleased](CHANGELOG.md)에 기록합니다. 이는 공개 GitHub 릴리스나 버전 변경을 뜻하지 않습니다.
+
+## 더 읽기
+
+- [도구 전체 안내](tools/README.md) — 명령, 스키마, 종료 코드, 산출물
+- [운영 절차](SKILL.md) — 설치된 스킬 경로에서 실행하는 법과 레인 선택
+- [증거의 경계](ops/evidence.md) — 크롤 진단이 증명하는 것과 증명하지 못하는 것
+- [문서 목차](docs/README.md)
+- [기여 안내](CONTRIBUTING.md)
+- [변경 이력](CHANGELOG.md)
+
+## 범위와 한계
+
+- Python 3.10+ 표준 라이브러리만 사용합니다. `tools/audit.sh`만 bash와 curl이 추가로 필요합니다.
+- 진단은 원시 HTTP HTML을 봅니다. JavaScript 렌더링, 벤더 색인 상태, 순위, 인용을 증명하지 않습니다.
+- 인용은 고정한 질의·표면·회차 cohort에서 관측합니다. 기술 준비가 인용을 보장하지 않으며, 오류와 미측정은 미인용과 분리합니다.
+- 네이버와 다음/카카오는 일급 레인입니다. 등록, 외부 평판, 운영 배포에는 사람의 판단과 접근 권한이 필요합니다.
+- 기본 크롤 한도는 300페이지입니다. 수집 범위가 불완전하면 교체용 사이트맵을 만들지 않습니다.
+
+로컬 테스트는 다음 명령으로 실행합니다.
+
+```bash
+python -m unittest discover tests
+```
 
 ## 라이선스
 
-**PolyForm Noncommercial 1.0.0** — [LICENSE](LICENSE) 참조.
+**PolyForm Noncommercial 1.0.0** — [LICENSE](LICENSE)를 참조하세요.
 
-- **개인·비영리·교육·연구 목적은 무료**로 자유롭게 쓸 수 있다
-- **기업·상업 목적 사용은 허용되지 않는다** — 별도 라이선스가 필요하면 **scitusu@gmail.com**으로 문의
+- **개인·비영리·교육·연구 용도는 무료입니다**
+- 이 라이선스에서는 **상업적 또는 기업 용도가 허용되지 않습니다**. 별도 상업 라이선스는 **scitusu@gmail.com**으로 문의하세요.

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 626" width="900" height="626" role="img" aria-label="Tool pipeline. 1 Audit: crawl.py to audit.json to report.py to report.html. Human gate: you approve the priority order. 2 Build: generate.py to deploy slash plus DEPLOY.md, drafts only. Human gate: a human reviews and a human deploys. 3 Prove: verify.py deploy to verify.json, exit code 1 on failure. Then 14 days. 4 Re-measure: re-crawl, verify.py diff, and measure.py with a human running the queries. 5 Loop: drift.py compare to drift.json and next_due, repeating every 14 days.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 626" width="900" height="626" role="img" aria-label="Audit, establish facts and a baseline, build drafts, deploy within authorization, verify live values, measure under fixed conditions, and compare snapshots. next_due does not schedule a job.">
   <style>
     .bg   { fill: #10201C }
     .pan  { fill: #1A2B28; stroke: #2E4A44; stroke-width: 1 }
@@ -36,7 +36,7 @@
   <rect class="gate" x="24" y="104" width="828" height="48" rx="9"/>
   <rect x="40" y="118" width="62" height="20" rx="10" fill="#A96A00"/>
   <text class="chip" x="72" y="132">HUMAN</text>
-  <text class="l2" x="116" y="133">You approve the priority order — nothing is generated before this.</text>
+  <text class="l2" x="116" y="133">Confirm goals, site facts and a baseline. Audit and draft within the authorized scope.</text>
   <path class="flow" d="M58,152 L58,170" marker-end="url(#h)"/>
 
   <!-- 2 BUILD -->
@@ -51,22 +51,22 @@
   <rect class="gate" x="24" y="276" width="828" height="48" rx="9"/>
   <rect x="40" y="290" width="62" height="20" rx="10" fill="#A96A00"/>
   <text class="chip" x="72" y="304">HUMAN</text>
-  <text class="l2" x="116" y="305">A human reviews the drafts and a human deploys them — the skill never pushes to production.</text>
+  <text class="l2" x="116" y="305">Review the drafts and deployment scope, then apply them to the authorized environment.</text>
   <path class="flow" d="M58,324 L58,342" marker-end="url(#h)"/>
 
   <!-- 3 PROVE -->
   <rect class="pan" x="24" y="344" width="828" height="64" rx="9"/>
   <circle cx="52" cy="367" r="13" fill="#0E6B5C"/><text class="num" x="52" y="371">3</text>
   <text class="l1" x="76" y="372"><tspan class="st">PROVE</tspan>   <tspan class="tool">verify.py deploy</tspan>  <tspan class="ar">→</tspan>  <tspan class="file">verify.json</tspan>  +  <tspan class="file">VERIFY.md</tspan></text>
-  <text class="note" x="76" y="392">Fetches the live site again and rules on each item. <tspan class="bad">Exit code 1 if anything failed.</tspan></text>
+  <text class="note" x="76" y="392">Fetches the live site again and rules on each item. <tspan class="bad">Exit 1 on failure; exit 2 on incomplete checks.</tspan></text>
   <path class="flow" d="M58,408 L58,436" marker-end="url(#h)"/>
-  <text class="lbl" x="74" y="428">14 days later</text>
+  <text class="lbl" x="74" y="428">First follow-up suggestion: 14 days</text>
 
   <!-- 4 RE-MEASURE -->
   <rect class="pan" x="24" y="438" width="828" height="84" rx="9"/>
   <circle cx="52" cy="459" r="13" fill="#0E6B5C"/><text class="num" x="52" y="463">4</text>
   <text class="l1" x="76" y="464"><tspan class="st">RE-MEASURE</tspan>   <tspan class="tool">crawl.py</tspan> (re-crawl)  <tspan class="ar">→</tspan>  <tspan class="tool">verify.py diff</tspan></text>
-  <text class="l2" x="76" y="486"><tspan class="tool">measure.py</tspan> form <tspan class="ar">→</tspan> [ a human runs the queries, signed out ] <tspan class="ar">→</tspan> import <tspan class="ar">→</tspan> report <tspan class="ar">→</tspan> <tspan class="file">summary.json</tspan></text>
+  <text class="l2" x="76" y="486"><tspan class="tool">measure.py</tspan> form <tspan class="ar">→</tspan> [ observe under fixed conditions ] <tspan class="ar">→</tspan> import <tspan class="ar">→</tspan> report <tspan class="ar">→</tspan> <tspan class="file">summary.json</tspan></text>
   <text class="note" x="76" y="506">Generated answers differ every time — ask the same question 5–10 times and record N out of M.</text>
   <path class="flow" d="M58,522 L58,540" marker-end="url(#h)"/>
 
@@ -74,9 +74,9 @@
   <rect class="pan" x="24" y="542" width="828" height="64" rx="9"/>
   <circle cx="52" cy="565" r="13" fill="#0E6B5C"/><text class="num" x="52" y="569">5</text>
   <text class="l1" x="76" y="570"><tspan class="st">LOOP</tspan>   <tspan class="tool">drift.py compare</tspan>  <tspan class="ar">→</tspan>  <tspan class="file">drift.json</tspan>  +  <tspan class="file">DRIFT.md</tspan>  <tspan class="ar">→</tspan>  <tspan class="file">next_due</tspan></text>
-  <text class="note" x="76" y="590">A regression exits 1. Done is <tspan class="file">next_due</tspan> existing — not “we fixed it”.</text>
+  <text class="note" x="76" y="590">Compare snapshots under matching conditions. <tspan class="file">next_due</tspan> is a date, not a scheduled job.</text>
 
   <!-- loop back -->
   <path class="flow" d="M852,574 L874,574 L874,480 L854,480" marker-end="url(#h)"/>
-  <text class="lbl" x="888" y="527" text-anchor="middle" transform="rotate(-90 888 527)">every 14 days</text>
+  <text class="lbl" x="888" y="527" text-anchor="middle" transform="rotate(-90 888 527)">repeat under fixed conditions</text>
 </svg>
